@@ -1,0 +1,20 @@
+# Use the official Node.js image as the base
+FROM node:20-alpine
+
+# Set the working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json (or npm-shrinkwrap.json)
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# # Install TypeScript and any other type definitions globally
+# RUN npm install -g typescript ts-node @types/node jest ts-jest @types/jest axios @types/axios
+
+# Copy the rest of the application
+COPY test.ts tsconfig.json jest.config.js ./
+
+# Command to run tests
+CMD ["npm", "test"]
