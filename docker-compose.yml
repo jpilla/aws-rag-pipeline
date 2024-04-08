@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  app:
+    build: 
+      context: ./app
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    # volumes:
+    #   - ./app:/usr/src/app
+
+  integration-tests:
+    build: 
+      context: ./integration-tests
+      dockerfile: Dockerfile.test
+    depends_on:
+      - app
+    environment:
+      - BASE_URL=http://app:3000

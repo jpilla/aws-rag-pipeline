@@ -1,14 +1,9 @@
 # express-api-docker
 
-Setup commands:
+Build images, start app container, start integration test container, leave app container up:
+```bash
+docker-compose up --build -d     
+```
 
-npm install
-
-npm install -g typescript
 
 
-Build image and run app in container:
-
-docker build -t express-api .
-
-docker run -d -p 3000:3000 express-api

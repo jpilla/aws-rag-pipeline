@@ -10,14 +10,11 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Install TypeScript globally in the container
-RUN npm install -g typescript
-
 # Copy the rest of the application files
 COPY index.ts tsconfig.json ./
 
 # Compile TypeScript to JavaScript
-RUN tsc
+RUN npx tsc
 
 # Expose port 3000
 EXPOSE 3000
