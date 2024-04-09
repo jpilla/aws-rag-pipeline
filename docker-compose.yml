@@ -4,10 +4,10 @@ services:
     build: 
       context: ./app
       dockerfile: Dockerfile
+    environment:
+      - PORT=${APPLICATION_PORT}
     ports:
       - "3000:3000"
-    # volumes:
-    #   - ./app:/usr/src/app
 
   integration-tests:
     build: 
@@ -16,4 +16,4 @@ services:
     depends_on:
       - app
     environment:
-      - BASE_URL=http://app:3000
+      - BASE_URL=http://app:${APPLICATION_PORT}
