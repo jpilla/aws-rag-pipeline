@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Setting the base URL for axios makes it easier to make requests
 const api = axios.create({
-  baseURL: 'http://app:3000',
+  baseURL: process.env.BASE_URL,
 });
 
 describe('GET', () => {

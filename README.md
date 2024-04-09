@@ -1,9 +1,11 @@
 # express-api-docker
 
-Build images, start app container, start integration test container, leave app container up:
+Start app on port 3000:
 ```bash
-docker-compose up --build -d     
+docker-compose up -d app
 ```
 
-
-
+Run integration tests (starts app if not already running):
+```bash
+docker-compose up integration-tests
+```
