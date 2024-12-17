@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:23.4.0-alpine
 
 WORKDIR /usr/src/app
 
@@ -6,7 +6,9 @@ COPY package*.json ./
 
 RUN npm install
 
-COPY index.ts tsconfig.json ./
+COPY ./src ./src
+
+COPY tsconfig.json ./
 
 RUN npx tsc
 
