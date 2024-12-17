@@ -1,7 +1,6 @@
-version: '3.8'
 services:
   app:
-    build: 
+    build:
       context: ./app
       dockerfile: Dockerfile
     environment:
@@ -17,3 +16,16 @@ services:
       - app
     environment:
       - BASE_URL=http://app:${APPLICATION_PORT}
+
+  app-debug:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    profiles:
+      - debug
+    environment:
+      - PORT=${APPLICATION_PORT}
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+    command: ["node", "--inspect=0.0.0.0:9229", "--enable-source-maps", "dist/index.js"]
