@@ -10,10 +10,10 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "@types/jest": "29.5.12",
-    "@types/node": "20.12.5",
-    "axios": "1.6.8",
-    "ts-jest": "29.1.2",
-    "typescript": "5.4.4"
+    "@types/jest": "29.5.14",
+    "@types/node": "22.10.2",
+    "axios": "1.7.9",
+    "ts-jest": "29.2.5",
+    "typescript": "5.7.2"
   }
 }
