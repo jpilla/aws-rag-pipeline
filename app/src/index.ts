@@ -1,12 +1,10 @@
 import express, { Request, Response } from 'express';
 
-console.log("Running from:", __dirname);
-console.log("Loaded file:", __filename);
-
 const app = express();
-const port = process.env.PORT;
+const port = process.env.APPLICATION_PORT;
 
 app.get('/', (req: Request, res: Response) => {
+  console.log(`Request received with method: ${req.method}`);
   res.json({ message: 'hello world!' });
 });
 
