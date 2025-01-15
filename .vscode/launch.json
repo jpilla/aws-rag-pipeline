@@ -1,18 +1,24 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-      {
-        "name": "Attach to Node.js in Docker",
-        "type": "node",
-        "request": "attach",
-        "address": "localhost",
-        "port": 9229,
-        "localRoot": "${workspaceFolder}/app/src",     // Local 'src' folder
-        "remoteRoot": "/usr/src/app/src",              // Container 'src' folder
-        "sourceMaps": true,
-        "skipFiles": ["<node_internals>/**"],
-        "outFiles": ["/usr/src/app/dist/**/*.js"],     // Container's transpiled JS files
-        "trace": true                                  // Enable detailed debug output
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach to Node.js in Docker",
+      "type": "node",
+      "request": "attach",
+      "address": "localhost",
+      "port": 9229,
+      "localRoot": "${workspaceFolder}/app/src",
+      "remoteRoot": "/usr/src/app/src",
+      "outFiles": [
+        "${workspaceFolder}/app/dist/**/*.js",
+        "!${workspaceFolder}/node_modules/**"
+      ],
+      "sourceMaps": true,
+      "trace": true,
+      "pauseForSourceMap": true,
+      "sourceMapPathOverrides": {
+        "/usr/src/app/src/*": "${workspaceFolder}/app/src/*"
       }
-    ]
-  }
+    }
+  ]
+}

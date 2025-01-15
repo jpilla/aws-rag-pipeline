@@ -2,30 +2,12 @@ services:
   app:
     build:
       context: ./app
-      dockerfile: Dockerfile
-    environment:
-      - PORT=${APPLICATION_PORT}
+      target: ${BUILD_TARGET:-prod} # Use "production" by default
+      dockerfile: Dockerfile      
     ports:
-      - "3000:3000"
-
-  integration-tests:
-    build: 
-      context: ./integration-tests
-      dockerfile: Dockerfile.test
-    depends_on:
-      - app
-    environment:
-      - BASE_URL=http://app:${APPLICATION_PORT}
-
-  app-debug:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
-    profiles:
-      - debug
-    environment:
-      - PORT=${APPLICATION_PORT}
-    ports:
-      - "3000:3000"
-      - "9229:9229"
-    command: ["node", "--inspect=0.0.0.0:9229", "--enable-source-maps", "dist/index.js"]
+      - "${APPLICATION_PORT}:${APPLICATION_PORT}"
+      - "9229:9229" # Only used in debug mode
+    env_file: 
+      - .env
+    # volumes:
+    #   - .:/usr/src/app # Enable live reloading in debug mode
