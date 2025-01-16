@@ -2,22 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Attach to Node.js in Docker",
+      "name": "Attach to Node.js in Docker (ts-node)",
       "type": "node",
       "request": "attach",
       "address": "localhost",
       "port": 9229,
-      "localRoot": "${workspaceFolder}/app/src",
-      "remoteRoot": "/usr/src/app/src",
-      "outFiles": [
-        "${workspaceFolder}/app/dist/**/*.js",
-        "!${workspaceFolder}/node_modules/**"
-      ],
+      "localRoot": "${workspaceFolder}/app/src", // Path to your TypeScript source
+      "remoteRoot": "/usr/src/app/src",         // Path in the container
       "sourceMaps": true,
       "trace": true,
       "pauseForSourceMap": true,
       "sourceMapPathOverrides": {
-        "/usr/src/app/src/*": "${workspaceFolder}/app/src/*"
+        "/usr/src/app/src/*": "${workspaceFolder}/app/src/*" // Map container paths to host paths
       }
     }
   ]

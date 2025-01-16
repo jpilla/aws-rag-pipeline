@@ -9,5 +9,12 @@ services:
       - "9229:9229" # Only used in debug mode
     env_file: 
       - .env
-    # volumes:
-    #   - .:/usr/src/app # Enable live reloading in debug mode
+    image: express-api-docker:${BUILD_TARGET:-prod}
+  integration-tests:
+    build:
+      context: ./integration-tests
+      dockerfile: Dockerfile.test
+    depends_on:
+      - app
+    env_file: 
+      - .env
