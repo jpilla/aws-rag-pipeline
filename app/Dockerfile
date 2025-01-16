@@ -38,7 +38,8 @@ FROM base AS dev
 WORKDIR /usr/src/app
 
 # Install ts-node globally for debugging
-RUN npm install -g ts-node
+# RUN npm install -g ts-node
+RUN npm install --only=development
 
 EXPOSE 3000 9229
-CMD ["npx", "ts-node", "--inspect=0.0.0.0:9229", "src/index.ts"]
+CMD ["node", "--inspect-brk=0.0.0.0:9229", "-r", "ts-node/register", "src/index.ts"]
