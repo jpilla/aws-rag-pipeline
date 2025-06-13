@@ -1,15 +1,16 @@
 services:
   app:
+    container_name: service
     build:
       context: ./app
-      target: ${BUILD_TARGET:-prod} # Use "production" by default
+      target: ${BUILD_TARGET:-prod}
       dockerfile: Dockerfile      
     ports:
       - "${APPLICATION_PORT}:${APPLICATION_PORT}"
       - "9229:9229" # Only used in debug mode
     env_file: 
       - .env
-    image: express-api-docker:${BUILD_TARGET:-prod}
+    image: express-api-docker:${BUILD_TARGET:-prod}-${IMAGE_TAG:-latest}
   integration-tests:
     build:
       context: ./integration-tests
@@ -18,3 +19,4 @@ services:
       - app
     env_file: 
       - .env
+    image: express-api-docker-integration-tests-${IMAGE_TAG:-latest}
