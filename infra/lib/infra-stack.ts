@@ -9,6 +9,13 @@ export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
+    const imageTag = this.node.tryGetContext('imageTag');
+    if (!imageTag) {
+      throw new Error('Missing context variable: imageTag'); // requires makefile to be run
+    }
+    const repoUri = '525127693073.dkr.ecr.eu-west-1.amazonaws.com/express-api-docker';
+    const containerImage = ecs.ContainerImage.fromRegistry(`${repoUri}:prod-${imageTag}`);
+
     const vpc = ec2.Vpc.fromLookup(this, 'Vpc', {
       isDefault: true,
     });
@@ -25,9 +32,7 @@ export class InfraStack extends Stack {
       listenerPort: 80,
       assignPublicIp: true,
       taskImageOptions: {
-        image: ecs.ContainerImage.fromRegistry(
-          '525127693073.dkr.ecr.eu-west-1.amazonaws.com/express-api-docker:prod-c55fe56'
-        ),
+        image: containerImage,
         containerPort: 3000,
         logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: 'app' }),
         environment: {

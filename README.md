@@ -2,12 +2,22 @@
 
 Start app on port 3000:
 ```bash
-IMAGE_TAG=$(git rev-parse --short HEAD) docker-compose up -d app
+make run-local
 ```
 
-Run integration tests (starts app if not already running):
+Run integration tests:
 ```bash
-IMAGE_TAG=$(git rev-parse --short HEAD) docker-compose up integration-tests
+make integration-tests
+```
+
+One shot build image, upload to AWS ECR, and deploy AWS infra with CDK:
+```bash
+make deploy
+```
+
+Tear down local docker containers and AWS infra
+```
+make destroy
 ```
 
 To use the VSCode debugger, start application with...
