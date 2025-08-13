@@ -2,7 +2,7 @@ services:
   app:
     container_name: service
     build:
-      context: ./app
+      context: ./services/api
       target: ${BUILD_TARGET:-prod}
       dockerfile: Dockerfile      
     ports:
