@@ -13,8 +13,8 @@ export class InfraStack extends Stack {
     if (!imageTag) {
       throw new Error('Missing context variable: imageTag'); // requires makefile to be run
     }
-    const repoUri = '525127693073.dkr.ecr.eu-west-1.amazonaws.com/express-api-docker';
-    const containerImage = ecs.ContainerImage.fromRegistry(`${repoUri}:prod-${imageTag}`);
+    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepo', 'express-api-docker');
+    const containerImage = ecs.ContainerImage.fromEcrRepository(repo, `prod-${imageTag}`);
 
     const vpc = ec2.Vpc.fromLookup(this, 'Vpc', {
       isDefault: true,
@@ -52,7 +52,6 @@ export class InfraStack extends Stack {
       healthyThresholdCount: 2,
     });
 
-    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepo', 'express-api-docker');
     repo.grantPull(service.taskDefinition.executionRole!);
   }
 }
