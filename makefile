@@ -45,16 +45,17 @@ deploy: push-image
 	@echo "🚢 Deploying with CDK (tag: prod-$(IMAGE_TAG))"
 	cd infra && npx cdk deploy -c imageTag=$(IMAGE_TAG)
 
-# --- destroy ---
-destroy:
+destroy-local:
 	@echo "🧹 Stopping and removing local containers"
 	docker-compose down -v --remove-orphans
 
-	@echo "💣 Destroying CDK stack"
-	cd infra && npx cdk destroy --force -c imageTag=$(IMAGE_TAG)
-
+remove-image:
 	@echo "🗑️ Removing ECR image prod-$(IMAGE_TAG)"
 	aws ecr batch-delete-image \
 	  --repository-name $(IMAGE_NAME) \
 	  --image-ids imageTag=prod-$(IMAGE_TAG) \
 	  --region $(ECR_REGION) || echo "⚠️ Image not found or already deleted"
+
+destroy: destroy-local remove-image
+	@echo "💣 Destroying CDK stack"
+	cd infra && npx cdk destroy --force -c imageTag=$(IMAGE_TAG)
