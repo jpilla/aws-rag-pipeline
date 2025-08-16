@@ -27,7 +27,7 @@ export interface HelloHealth {
         const ac = new AbortController();
         const t = setTimeout(() => ac.abort(), 3_000);
         try {
-          const r = await fetch(`${base}/health`, { signal: ac.signal });
+          const r = await fetch(`${base}/healthz`, { signal: ac.signal });
           if (!r.ok) throw new Error(`health status ${r.status}`);
           return { ok: true, via: base };
         } finally {

@@ -1,34 +1,33 @@
 services:
   hello:
     build:
-      context: ./services/hello
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE_DIR: services/hello
     environment:
-      APPLICATION_PORT: "3001"
+      PORT: "${HELLO_PORT:-3001}"         # container listens here
     ports:
-      - "3001:3001"
+      - "${HELLO_HOST_PORT:-3001}:3001"   # host:container
     healthcheck:
-      test: ["CMD", "node", "-e", "http=require('http');http.get('http://localhost:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/healthz >/dev/null 2>&1 || exit 1"]
       interval: 5s
       timeout: 2s
       retries: 10
-  app:
-    container_name: service
+      start_period: 10s
+
+  api:
     build:
-      context: ./services/api
-      target: ${BUILD_TARGET:-prod}
-      dockerfile: Dockerfile      
+      context: .
+      dockerfile: ./Dockerfile
+      args:
+        SERVICE_DIR: services/api
+    environment:
+      PORT: "${API_PORT:-3000}"
+      HELLO_URL: "http://hello:${HELLO_PORT:-3001}"
+      HELLO_MOCK: "${HELLO_MOCK:-0}"
     ports:
-      - "${APPLICATION_PORT}:${APPLICATION_PORT}"
-      - "9229:9229" # Only used in debug mode
-    env_file: 
-      - .env
-    image: express-api-docker:${BUILD_TARGET:-prod}-${IMAGE_TAG:-latest}
-  integration-tests:
-    build:
-      context: ./integration-tests
-      dockerfile: Dockerfile.test
+      - "${API_HOST_PORT:-3000}:3000"
     depends_on:
-      - app
-    env_file: 
-      - .env
-    image: express-api-docker-integration-tests-${IMAGE_TAG:-latest}
+      hello:
+        condition: service_healthy
