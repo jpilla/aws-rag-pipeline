@@ -1,11 +1,11 @@
 import express from "express";
 
 const app = express();
-const port = Number(process.env.APPLICATION_PORT || 3001);
+const PORT = Number(process.env.PORT || 3001);
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+app.get("/healthz", (_req, res) => res.json({ status: "ok", service: "hello" }));
 app.get("/", (_req, res) => res.json({ msg: "hello from private service" }));
 
-app.listen(port, () => {
-  console.log(`hello listening on ${port}`);
+app.listen(PORT, () => {
+  console.log(`hello listening :${PORT}`);
 });
