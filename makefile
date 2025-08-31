@@ -6,7 +6,7 @@ ECR_REPO := $(ECR_ACCOUNT_ID).dkr.ecr.$(ECR_REGION).amazonaws.com/$(IMAGE_NAME)
 
 # ========== TARGETS ==========
 
-.PHONY: help build-local build-image-local run-local push-image login-ecr deploy integration-tests
+.PHONY: help build-local build-image-local run-local push-image login-ecr deploy integration-tests test-local clean-test
 
 help:
 	@echo "Available targets:"
@@ -18,11 +18,11 @@ help:
 # --- LOCAL DEV ---
 build-image-local:
 	@echo "🧱 Building app image locally (tag: prod-$(IMAGE_TAG))"
-	IMAGE_TAG=$(IMAGE_TAG) docker-compose build app
+	IMAGE_TAG=$(IMAGE_TAG) docker-compose build api
 
 execute-local:
 	@echo "🚀 Running app locally"
-	IMAGE_TAG=$(IMAGE_TAG) docker-compose up -d app
+	IMAGE_TAG=$(IMAGE_TAG) docker-compose up -d api
 
 run-local: build-image-local execute-local
 
