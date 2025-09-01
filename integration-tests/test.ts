@@ -1,18 +1,13 @@
 import axios from 'axios';
-import http from 'http';
-import https from 'https';
-
-// Create HTTP agents with keep-alive enabled
-const httpAgent = new http.Agent({ keepAlive: true });
-const httpsAgent = new https.Agent({ keepAlive: true });
 
 // Setting the base URL for axios makes it easier to make requests
 const api = axios.create({
   baseURL: process.env.BASE_URL,
-  httpAgent,
-  httpsAgent,
   timeout: 10000, // 10 second timeout
+  // Let axios handle connection pooling internally
 });
+
+// No need for custom cleanup since axios manages its own connections
 
 describe('API Endpoints', () => {
   describe('GET /', () => {

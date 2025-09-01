@@ -6,7 +6,7 @@ ECR_REPO := $(ECR_ACCOUNT_ID).dkr.ecr.$(ECR_REGION).amazonaws.com/$(IMAGE_NAME)
 
 # ========== TARGETS ==========
 
-.PHONY: help build-local build-image-local run-local push-image login-ecr deploy integration-tests test-local clean-test
+.PHONY: help build-local build-image-local run-local push-image login-ecr deploy integration-tests
 
 help:
 	@echo "Available targets:"
