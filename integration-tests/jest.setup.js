@@ -15,9 +15,9 @@ beforeAll(async () => {
   if (!baseURL) {
     throw new Error('BASE_URL environment variable is required');
   }
-  
+
   console.log(`🧪 Running integration tests against: ${baseURL}`);
-  
+
   // Wait for API to be ready (with retries)
   let retries = 30;
   while (retries > 0) {
@@ -30,7 +30,9 @@ beforeAll(async () => {
       if (retries === 0) {
         throw new Error('API service failed to become ready within timeout');
       }
-      console.log(`⏳ Waiting for API service... (${retries} retries left)`);
+      if (retries % 5 === 0) { // Only log every 5th retry to reduce noise
+        console.log(`⏳ Waiting for API service... (${retries} retries left)`);
+      }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }

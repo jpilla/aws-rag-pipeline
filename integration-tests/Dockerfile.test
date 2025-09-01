@@ -6,6 +6,6 @@ COPY package*.json ./
 
 RUN npm install
 
-COPY test.ts tsconfig.json jest.config.js ./
+COPY test.ts tsconfig.json jest.config.js jest.setup.js ./
 
 CMD ["npm", "test"]
