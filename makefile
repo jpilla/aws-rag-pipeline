@@ -26,6 +26,9 @@ execute-local:
 
 run-local: build-image-local execute-local
 
+api-debug-up:
+	env -u NODE_OPTIONS docker compose --profile debug up -d api-debug
+
 integration-tests:
 	@echo "🧪 Running integration tests against local service"
 	IMAGE_TAG=$(IMAGE_TAG) docker-compose run --rm integration-tests

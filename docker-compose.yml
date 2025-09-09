@@ -27,11 +27,22 @@ services:
       PORT: "${API_PORT:-3000}"
       HELLO_URL: "http://hello:${HELLO_PORT:-3001}"
       HELLO_MOCK: "${HELLO_MOCK:-0}"
+      NODE_OPTIONS: ""
     ports:
       - "${API_HOST_PORT:-3000}:3000"
     depends_on:
       hello:
         condition: service_healthy
+
+  api-debug:
+    extends: api
+    profiles: ["debug"]
+    command: ["node","--enable-source-maps","--inspect-brk=0.0.0.0:9229","dist/server.js"]
+    environment:
+      NODE_OPTIONS: ""
+    ports:
+      - "${API_HOST_PORT:-3000}:3000"
+      - "9229:9229"
 
   integration-tests:
     build:
