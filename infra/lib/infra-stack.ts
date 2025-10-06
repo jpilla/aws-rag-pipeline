@@ -1,4 +1,4 @@
-import { Stack, StackProps, Duration } from 'aws-cdk-lib';
+import { Stack, StackProps, Duration, CfnOutput, Tags } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
@@ -10,176 +10,104 @@ export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
+    // ---------- Inputs ----------
     const imageTag = this.node.tryGetContext('imageTag');
-    if (!imageTag) {
-      throw new Error('Missing context variable: imageTag'); // requires makefile to be run
-    }
+    if (!imageTag) throw new Error('Missing context variable: imageTag');
     const repo = ecr.Repository.fromRepositoryName(this, 'AppRepo', 'express-api-docker');
     const containerImage = ecs.ContainerImage.fromEcrRepository(repo, `prod-${imageTag}`);
 
-    const vpc = ec2.Vpc.fromLookup(this, 'Vpc', {
-      isDefault: true,
+    // ---------- VPC (yours) ----------
+    // No NAT yet. Public subnets for ALB + tasks, isolated subnets for Aurora later.
+    const vpc = new ec2.Vpc(this, 'AppVpc', {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [
+        { name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
+        { name: 'db-isolated', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
+      ],
     });
+    Tags.of(vpc).add('App', 'express-embeddings');
+    Tags.of(vpc).add('Env', 'prod');
 
-    const cluster = new ecs.Cluster(this, 'EcsCluster', {
-      vpc,
-    });
+    // ---------- ECS Cluster ----------
+    const cluster = new ecs.Cluster(this, 'EcsCluster', { vpc });
 
-    // Create a private DNS namespace for service discovery
+    // Private DNS namespace for service discovery (hello.local)
     const namespace = new servicediscovery.PrivateDnsNamespace(this, 'ServiceNamespace', {
       name: 'local',
       vpc,
     });
 
-    // Create security groups
-    const apiSecurityGroup = new ec2.SecurityGroup(this, 'ApiSecurityGroup', {
+    // ---------- Security Groups (keep simple while public IPs are on) ----------
+    const apiSg = new ec2.SecurityGroup(this, 'ApiSg', {
       vpc,
-      description: 'Security group for API service',
-      allowAllOutbound: false, // More restrictive - only allow specific outbound traffic
+      description: 'API service SG',
+      allowAllOutbound: true,
     });
 
-    const helloSecurityGroup = new ec2.SecurityGroup(this, 'HelloSecurityGroup', {
+    const helloSg = new ec2.SecurityGroup(this, 'HelloSg', {
       vpc,
-      description: 'Security group for Hello service',
-      allowAllOutbound: false, // More restrictive - only allow specific outbound traffic
+      description: 'Hello service SG',
+      allowAllOutbound: true,
     });
 
-    // Allow API service to communicate with Hello service
-    helloSecurityGroup.addIngressRule(
-      apiSecurityGroup,
-      ec2.Port.tcp(3001),
-      'Allow API service to reach Hello service'
-    );
+    // API -> Hello on 3001
+    helloSg.addIngressRule(apiSg, ec2.Port.tcp(3001), 'API to Hello (3001)');
 
-    // Add specific outbound rules for API service
-    // Allow HTTPS outbound for external API calls (if needed)
-    apiSecurityGroup.addEgressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(443),
-      'Allow HTTPS outbound for external API calls'
-    );
-
-    // Allow HTTP outbound for external API calls (if needed)
-    apiSecurityGroup.addEgressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(80),
-      'Allow HTTP outbound for external API calls'
-    );
-
-    // Allow API service to call Hello on 3001
-    apiSecurityGroup.addEgressRule(
-      helloSecurityGroup,
-      ec2.Port.tcp(3001),
-      'Allow API to call Hello on 3001'
-    );
-
-    // Add specific outbound rules for Hello service
-    // Allow HTTPS outbound for any external dependencies
-    helloSecurityGroup.addEgressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(443),
-      'Allow HTTPS outbound for external dependencies'
-    );
-
-    // Allow access to VPC endpoints for ECR
-    helloSecurityGroup.addEgressRule(
-      ec2.Peer.ipv4(vpc.vpcCidrBlock),
-      ec2.Port.tcp(443),
-      'Allow access to VPC endpoints for ECR'
-    );
-
-    // Create VPC endpoints for ECR to allow private communication
-    const ecrApiEndpoint = new ec2.InterfaceVpcEndpoint(this, 'EcrApiEndpoint', {
-      vpc,
-      service: ec2.InterfaceVpcEndpointAwsService.ECR,
-      privateDnsEnabled: true,
+    // ---------- Hello service (internal-only via Cloud Map) ----------
+    const helloTaskDef = new ecs.FargateTaskDefinition(this, 'HelloTaskDef', {
+      cpu: 256,
+      memoryLimitMiB: 512,
     });
 
-    const ecrDockerEndpoint = new ec2.InterfaceVpcEndpoint(this, 'EcrDockerEndpoint', {
-      vpc,
-      service: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
-      privateDnsEnabled: true,
-    });
-
-    const s3Endpoint = new ec2.GatewayVpcEndpoint(this, 'S3Endpoint', {
-      vpc,
-      service: ec2.GatewayVpcEndpointAwsService.S3,
-    });
-
-    // Add CloudWatch Logs VPC endpoint for private tasks
-    const cloudWatchLogsEndpoint = new ec2.InterfaceVpcEndpoint(this, 'CloudWatchLogsEndpoint', {
-      vpc,
-      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
-      privateDnsEnabled: true,
-    });
-
-    // Add CloudWatch VPC endpoint for metrics
-    const cloudWatchEndpoint = new ec2.InterfaceVpcEndpoint(this, 'CloudWatchEndpoint', {
-      vpc,
-      service: ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_MONITORING,
-      privateDnsEnabled: true,
-    });
-
-    // Deploy Hello service (internal only)
-    const helloService = new ecs.FargateService(this, 'HelloService', {
-      cluster,
-      taskDefinition: new ecs.FargateTaskDefinition(this, 'HelloTaskDef', {
-        cpu: 256,
-        memoryLimitMiB: 512,
-      }),
-      desiredCount: 1,
-      securityGroups: [helloSecurityGroup],
-      assignPublicIp: false, // Keep internal
-    });
-
-    // Add Hello container to task definition
-    const helloContainer = helloService.taskDefinition.addContainer('HelloContainer', {
+    helloTaskDef.addContainer('HelloContainer', {
       image: containerImage,
+      portMappings: [{ containerPort: 3001 }],
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'hello' }),
       environment: {
         PORT: '3001',
-        SERVICE_DIR: 'services/hello', // This will be used by your Dockerfile
+        SERVICE_DIR: 'services/hello',
       },
     });
 
-    helloContainer.addPortMappings({
-      containerPort: 3001,
-      protocol: ecs.Protocol.TCP,
-    });
-
-    // Register Hello service with service discovery
-    const helloServiceDiscovery = helloService.associateCloudMapService({
-      service: new servicediscovery.Service(this, 'HelloServiceDiscovery', {
-        namespace,
+    const helloService = new ecs.FargateService(this, 'HelloService', {
+      cluster,
+      taskDefinition: helloTaskDef,
+      desiredCount: 1,
+      securityGroups: [helloSg],
+      assignPublicIp: true,                         // IMPORTANT (no NAT/endpoints yet)
+      vpcSubnets: { subnetGroupName: 'public' },   // place ENIs in public subnets
+      cloudMapOptions: {
+        cloudMapNamespace: namespace,
         name: 'hello',
         dnsRecordType: servicediscovery.DnsRecordType.A,
         dnsTtl: Duration.seconds(10),
-      }),
+      },
     });
 
-    // Deploy API service (public-facing with ALB)
+    // ---------- API service (public ALB) ----------
     const apiService = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'ApiService', {
       cluster,
+      desiredCount: 1,
       cpu: 256,
       memoryLimitMiB: 512,
-      desiredCount: 1,
+      publicLoadBalancer: true,
       listenerPort: 80,
-      assignPublicIp: true,
-      securityGroups: [apiSecurityGroup],
+      taskSubnets: { subnetGroupName: 'public' },
+      assignPublicIp: true,                        // IMPORTANT (no NAT/endpoints yet)
+      securityGroups: [apiSg],
       taskImageOptions: {
         image: containerImage,
         containerPort: 3000,
         logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
         environment: {
           PORT: '3000',
-          HELLO_URL: 'http://hello.local:3001', // Use service discovery
-          SERVICE_DIR: 'services/api', // This will be used by your Dockerfile
+          HELLO_URL: 'http://hello.local:3001',   // Service discovery
+          SERVICE_DIR: 'services/api',
         },
       },
-      publicLoadBalancer: true,
     });
 
-    // Configure health check for API service
     apiService.targetGroup.configureHealthCheck({
       path: '/healthz',
       port: '3000',
@@ -190,8 +118,18 @@ export class InfraStack extends Stack {
       healthyThresholdCount: 2,
     });
 
-    // Grant ECR pull permissions to both services
+    // ECR pull permissions
     repo.grantPull(apiService.taskDefinition.executionRole!);
     repo.grantPull(helloService.taskDefinition.executionRole!);
+
+    // ---------- Outputs ----------
+    new CfnOutput(this, 'VpcId', { value: vpc.vpcId });
+    new CfnOutput(this, 'PublicSubnets', {
+      value: vpc.selectSubnets({ subnetGroupName: 'public' }).subnetIds.join(','),
+    });
+    new CfnOutput(this, 'IsolatedSubnets', {
+      value: vpc.selectSubnets({ subnetGroupName: 'db-isolated' }).subnetIds.join(','),
+    });
+    new CfnOutput(this, 'AlbDnsName', { value: apiService.loadBalancer.loadBalancerDnsName });
   }
 }
