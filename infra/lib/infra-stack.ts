@@ -2,6 +2,7 @@ import { Stack, StackProps, Duration, CfnOutput, Tags } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
@@ -122,6 +123,37 @@ export class InfraStack extends Stack {
     repo.grantPull(apiService.taskDefinition.executionRole!);
     repo.grantPull(helloService.taskDefinition.executionRole!);
 
+    // SQS
+    const dlq = new sqs.Queue(this, "IngestDlq", {
+      queueName: "app-ingest-dlq",
+      retentionPeriod: Duration.days(2),
+      enforceSSL: true,
+    });
+
+    const ingestQueue = new sqs.Queue(this, "IngestQueue", {
+      queueName: "app-ingest",
+      visibilityTimeout: Duration.seconds(20),
+      deadLetterQueue: { queue: dlq, maxReceiveCount: 5 },
+      enforceSSL: true,
+    });
+
+    // Grant + inject env
+    ingestQueue.grantSendMessages(apiService.taskDefinition.taskRole);
+
+    // Gather containers safely (defaultContainer if set, else scan children)
+    const containers: ecs.ContainerDefinition[] = [];
+    if (apiService.taskDefinition.defaultContainer) {
+      containers.push(apiService.taskDefinition.defaultContainer);
+    }
+    for (const child of apiService.taskDefinition.node.children) {
+      if (child instanceof ecs.ContainerDefinition && !containers.includes(child)) {
+        containers.push(child);
+      }
+    }
+
+    // Inject env
+    containers.forEach(c => c.addEnvironment("INGEST_QUEUE_URL", ingestQueue.queueUrl));
+
     // ---------- Outputs ----------
     new CfnOutput(this, 'VpcId', { value: vpc.vpcId });
     new CfnOutput(this, 'PublicSubnets', {
@@ -131,5 +163,7 @@ export class InfraStack extends Stack {
       value: vpc.selectSubnets({ subnetGroupName: 'db-isolated' }).subnetIds.join(','),
     });
     new CfnOutput(this, 'AlbDnsName', { value: apiService.loadBalancer.loadBalancerDnsName });
+    new CfnOutput(this, "IngestQueueUrl", { value: ingestQueue.queueUrl });
+
   }
 }
