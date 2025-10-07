@@ -27,7 +27,7 @@ execute-local:
 run-local: build-image-local execute-local
 
 api-debug-up:
-	env -u NODE_OPTIONS docker compose --profile debug up -d api-debug
+	env -u NODE_OPTIONS docker compose up --build -d api-debug
 
 integration-tests:
 	@echo "🧪 Running integration tests against local service"
@@ -46,7 +46,7 @@ push-image: login-ecr build-image-local
 
 deploy: push-image
 	@echo "🚢 Deploying with CDK (tag: prod-$(IMAGE_TAG))"
-	cd infra && npx cdk deploy -c imageTag=$(IMAGE_TAG)
+	cd infra && npx cdk deploy -c ecrRepo=$(ECR_REPO) -c imageTag=prod-$(IMAGE_TAG)
 
 destroy-local:
 	@echo "🧹 Stopping and removing local containers"
@@ -61,4 +61,4 @@ remove-image:
 
 destroy: destroy-local remove-image
 	@echo "💣 Destroying CDK stack"
-	cd infra && npx cdk destroy --force -c imageTag=$(IMAGE_TAG)
+	cd infra && npx cdk destroy --force -c ecrRepo=$(ECR_REPO) -c imageTag=prod-$(IMAGE_TAG)

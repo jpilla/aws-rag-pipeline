@@ -12,10 +12,10 @@ export class InfraStack extends Stack {
     super(scope, id, props);
 
     // ---------- Inputs ----------
+    const ecrRepo = this.node.tryGetContext('ecrRepo');
     const imageTag = this.node.tryGetContext('imageTag');
-    if (!imageTag) throw new Error('Missing context variable: imageTag');
-    const repo = ecr.Repository.fromRepositoryName(this, 'AppRepo', 'express-api-docker');
-    const containerImage = ecs.ContainerImage.fromEcrRepository(repo, `prod-${imageTag}`);
+    const repo = ecr.Repository.fromRepositoryName(this, 'Repo', ecrRepo.split('/').pop()!);
+    const image = ecs.ContainerImage.fromEcrRepository(repo!, imageTag);
 
     // ---------- VPC (yours) ----------
     // No NAT yet. Public subnets for ALB + tasks, isolated subnets for Aurora later.
@@ -62,7 +62,7 @@ export class InfraStack extends Stack {
     });
 
     helloTaskDef.addContainer('HelloContainer', {
-      image: containerImage,
+      image: image,
       portMappings: [{ containerPort: 3001 }],
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'hello' }),
       environment: {
@@ -98,7 +98,7 @@ export class InfraStack extends Stack {
       assignPublicIp: true,                        // IMPORTANT (no NAT/endpoints yet)
       securityGroups: [apiSg],
       taskImageOptions: {
-        image: containerImage,
+        image: image,
         containerPort: 3000,
         logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
         environment: {
