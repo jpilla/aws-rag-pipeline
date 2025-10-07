@@ -1,0 +1,141 @@
+❯ curl -X POST "http://InfraS-ApiSe-DaoWWBGWIGPW-1250696636.eu-west-1.elb.amazonaws.com/v1/ingest" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 4f2ce3d2-b71e-4d0e-bd11-34a2f2e5d989" \
+  -d '{
+    "records": [
+      { "clientId": "chunk-001", "content": "The quick brown fox jumps over the lazy dog." },
+      { "clientId": "chunk-002", "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit." },
+      { "clientId": "chunk-003", "content": "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." },
+      { "clientId": "chunk-004", "content": "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi." },
+      { "clientId": "chunk-005", "content": "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore." },
+      { "clientId": "chunk-006", "content": "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia." },
+      { "clientId": "chunk-007", "content": "Aliquip ex ea commodo consequat." },
+      { "clientId": "chunk-008", "content": "Short test content number eight." },
+      { "clientId": "chunk-009", "content": "Ninth example content for the ingest test endpoint." },
+      { "clientId": "chunk-010", "content": "Tenth record text data for verifying batching to SQS." },
+      { "clientId": "chunk-011", "content": "Eleventh record; testing multi-message batching and ordering." },
+      { "clientId": "chunk-012", "content": "Twelfth record text." },
+      { "clientId": "chunk-013", "content": "Thirteenth record for SQS ingestion." },
+      { "clientId": "chunk-014", "content": "Fourteenth record—confirming no batch overflow." },
+      { "clientId": "chunk-015", "content": "Fifteenth record completing test batch of fifteen chunks." }
+    ]
+  }' | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  4166  100  2609  100  1557  18912  11286 --:--:-- --:--:-- --:--:-- 30408
+{
+  "batchId": "b_afb74c98-5f3d-48da-9291-6cdd605d79ee",
+  "summary": {
+    "received": 15,
+    "enqueued": 15,
+    "rejected": 0
+  },
+  "results": [
+    {
+      "clientId": "chunk-001",
+      "originalIndex": 0,
+      "chunkId": "c_62a6448e-bc2a-47b3-a7d0-771a1639edca",
+      "messageId": "3262d0fd-a95e-4ebc-931e-0d0b1968fe99",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-002",
+      "originalIndex": 1,
+      "chunkId": "c_0b2909a4-eee5-48f1-896d-b7788fe4f8d0",
+      "messageId": "0884ffe3-ec00-4179-bb53-264ae6a0ce25",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-003",
+      "originalIndex": 2,
+      "chunkId": "c_527e2937-11f3-4449-a31e-56831f29d1cb",
+      "messageId": "eb631650-688d-4c3a-855c-76cffdfe0c51",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-004",
+      "originalIndex": 3,
+      "chunkId": "c_526d55b4-17c9-4e92-874e-d23d459d1dae",
+      "messageId": "11c3b5c9-d723-414c-82aa-89990291ecbe",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-005",
+      "originalIndex": 4,
+      "chunkId": "c_c5ba8c96-e29c-49c0-8dea-3e1e66ddcb81",
+      "messageId": "1cc95d33-815f-4b81-bb5c-f15412754b0a",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-006",
+      "originalIndex": 5,
+      "chunkId": "c_1d2516ff-939f-4a56-a40c-a7cdd38894af",
+      "messageId": "978a4bdb-deff-49cb-a9d3-b755cb2b0c12",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-007",
+      "originalIndex": 6,
+      "chunkId": "c_19ccf955-bcfc-45bf-9447-099bf6e4407f",
+      "messageId": "3e3a3c1f-8891-4d2a-8622-11e2b0f28c6e",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-008",
+      "originalIndex": 7,
+      "chunkId": "c_a1c71cb0-9a7d-443d-8600-3a78ef0c935f",
+      "messageId": "7c5f1872-10fc-4b45-876b-f8cc1dd17f30",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-009",
+      "originalIndex": 8,
+      "chunkId": "c_6450b977-a2a1-41ef-8423-24690e60d259",
+      "messageId": "7670a397-10ab-4cbc-b15c-e743a4d2b5cd",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-010",
+      "originalIndex": 9,
+      "chunkId": "c_04fa787d-1911-4326-85fc-7a6975961508",
+      "messageId": "b2910e5e-7394-4286-8ce6-aa201bd94447",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-011",
+      "originalIndex": 10,
+      "chunkId": "c_63a8927e-7aa3-44ee-8470-3cfa5ea45fff",
+      "messageId": "59628477-1e63-4e59-9b8c-e3cc39df21ea",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-012",
+      "originalIndex": 11,
+      "chunkId": "c_cd78bbea-f66d-4eb5-8c3f-2ad0f73acf0a",
+      "messageId": "9618761f-f61b-4900-a7b9-07b87a308e35",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-013",
+      "originalIndex": 12,
+      "chunkId": "c_1ed856ae-60a7-473f-82cd-a7b15dcfb3a3",
+      "messageId": "24ec7cfa-fa36-4635-86c4-65066b0992ec",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-014",
+      "originalIndex": 13,
+      "chunkId": "c_8205bf28-a6fd-45d6-bc91-48417d922ebe",
+      "messageId": "c92d72ad-7dac-4a1a-94a9-a93491743190",
+      "status": "enqueued"
+    },
+    {
+      "clientId": "chunk-015",
+      "originalIndex": 14,
+      "chunkId": "c_71bc88a7-2b45-45f8-8a22-deceb551f949",
+      "messageId": "2633c422-19d4-40c3-b4c3-87cfe0a8b6e8",
+      "status": "enqueued"
+    }
+  ],
+  "errors": []
+}
