@@ -1,8 +1,11 @@
+import * as path from 'path';
 import { Stack, StackProps, Duration, CfnOutput, Tags } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
@@ -132,7 +135,7 @@ export class InfraStack extends Stack {
 
     const ingestQueue = new sqs.Queue(this, "IngestQueue", {
       queueName: "app-ingest",
-      visibilityTimeout: Duration.seconds(20),
+      visibilityTimeout: Duration.seconds(40),
       deadLetterQueue: { queue: dlq, maxReceiveCount: 5 },
       enforceSSL: true,
     });
@@ -153,6 +156,29 @@ export class InfraStack extends Stack {
 
     // Inject env
     containers.forEach(c => c.addEnvironment("INGEST_QUEUE_URL", ingestQueue.queueUrl));
+
+    const ingestConsumerFn = new lambda.DockerImageFunction(this, 'IngestConsumerFn', {
+      code: lambda.DockerImageCode.fromImageAsset(
+        // adjust if your lambda path differs
+        path.join(__dirname, '../../lambdas/ingest-queue-reader')
+      ),
+      memorySize: 512,
+      timeout: Duration.seconds(20),
+      architecture: lambda.Architecture.X86_64,
+      environment: {
+        LOG_LEVEL: 'info',
+        CONCURRENCY: '10', // how many records to process in parallel inside the handler
+      },
+    });
+  
+    // SQS event source mapping with partial-failure reporting
+    ingestConsumerFn.addEventSource(
+      new lambdaEventSources.SqsEventSource(ingestQueue, {
+        batchSize: 10,                                   // up to 10 msgs per invoke
+        maxBatchingWindow: Duration.seconds(1),          // small buffer for batching
+        reportBatchItemFailures: true,                   // only retry failed records
+      })
+    );
 
     // ---------- Outputs ----------
     new CfnOutput(this, 'VpcId', { value: vpc.vpcId });
