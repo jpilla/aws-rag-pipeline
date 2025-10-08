@@ -1,0 +1,36 @@
+{
+  "Records": [
+    {
+      "messageId": "m-001",
+      "receiptHandle": "rh",
+      "body": "{\"type\":\"demo\",\"data\":{\"clientId\":\"chunk-001\",\"content\":\"The quick brown fox jumps over the lazy dog.\"}}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "SentTimestamp": "1690000000000",
+        "SenderId": "me",
+        "ApproximateFirstReceiveTimestamp": "1690000000001"
+      },
+      "messageAttributes": {},
+      "md5OfBody": "x",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:eu-west-1:123456789012:ingest",
+      "awsRegion": "eu-west-1"
+    },
+    {
+      "messageId": "m-002",
+      "receiptHandle": "rh",
+      "body": "{\"type\":\"demo\",\"data\":{\"clientId\":\"chunk-002\",\"content\":\"Lorem ipsum dolor sit amet.\"}}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "SentTimestamp": "1690000000000",
+        "SenderId": "me",
+        "ApproximateFirstReceiveTimestamp": "1690000000001"
+      },
+      "messageAttributes": {},
+      "md5OfBody": "y",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:eu-west-1:123456789012:ingest",
+      "awsRegion": "eu-west-1"
+    }
+  ]
+}

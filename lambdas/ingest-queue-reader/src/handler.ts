@@ -10,13 +10,11 @@ const parseJson = (s: string) => {
   }
 };
 
-// When true, we return only the failed messageIds; Lambda deletes the rest.
 export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
   const failures: SQSBatchItemFailure[] = [];
 
   logger.info({ records: event.Records.length, awsRequestId: (event as any).requestContext?.requestId }, "SQS batch received");
 
-  // Handle messages concurrently but cap concurrency to avoid memory spikes.
   const concurrency = Number(process.env.CONCURRENCY ?? "10");
   const chunks = chunk(event.Records, concurrency);
 
@@ -29,13 +27,12 @@ export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
 
         if (!payload) {
           logger.warn({ messageId }, "Malformed JSON in SQS body");
-          failures.push({ itemIdentifier: messageId }); // let it go to DLQ after maxReceiveCount
+          failures.push({ itemIdentifier: messageId });
           return;
         }
 
         try {
-          //await processOne(messageId, payload);
-          logger.info({ messageId, payload }, "Message processed");
+          await processOne(messageId, payload);
         } catch (err: any) {
           logger.error({ err, messageId }, "Message processing failed");
           failures.push({ itemIdentifier: messageId });
