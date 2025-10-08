@@ -1,0 +1,14 @@
+cd lambdas/ingest-queue-reader
+npm ci
+npm run build     # regenerates dist/ with .js and .map
+cd -
+
+docker run -d \
+-p 9001:8080 \
+-p 9229:9229 \
+-e NODE_OPTIONS="--enable-source-maps --inspect=0.0.0.0:9229 --inspect-brk" \
+ingest-queue-reader
+
+curl -s http://localhost:9001/2015-03-31/functions/function/invocations \
+-H "Content-Type: application/json" \
+--data-binary @sqs-message.json | jq
