@@ -1,14 +1,17 @@
 import * as path from 'path';
-import { Stack, StackProps, Duration, CfnOutput, Tags } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
-import * as sqs from "aws-cdk-lib/aws-sqs";
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
-import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
-import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
+
+// Import our modular constructs
+import { Networking } from './constructs/networking';
+import { EcsCluster } from './constructs/ecs-cluster';
+import { SecurityGroups } from './constructs/security-groups';
+import { HelloService } from './constructs/hello-service';
+import { ApiService } from './constructs/api-service';
+import { SqsQueues } from './constructs/sqs-queues';
+import { IngestLambda } from './constructs/ingest-lambda';
 
 export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -20,176 +23,62 @@ export class InfraStack extends Stack {
     const repo = ecr.Repository.fromRepositoryName(this, 'Repo', ecrRepo.split('/').pop()!);
     const image = ecs.ContainerImage.fromEcrRepository(repo!, imageTag);
 
-    // ---------- VPC (yours) ----------
-    // No NAT yet. Public subnets for ALB + tasks, isolated subnets for Aurora later.
-    const vpc = new ec2.Vpc(this, 'AppVpc', {
-      maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [
-        { name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
-        { name: 'db-isolated', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
-      ],
-    });
-    Tags.of(vpc).add('App', 'express-embeddings');
-    Tags.of(vpc).add('Env', 'prod');
+    // ---------- Networking ----------
+    const networking = new Networking(this, 'Networking');
 
-    // ---------- ECS Cluster ----------
-    const cluster = new ecs.Cluster(this, 'EcsCluster', { vpc });
-
-    // Private DNS namespace for service discovery (hello.local)
-    const namespace = new servicediscovery.PrivateDnsNamespace(this, 'ServiceNamespace', {
-      name: 'local',
-      vpc,
+    // ---------- ECS Cluster and Service Discovery ----------
+    const ecsCluster = new EcsCluster(this, 'EcsCluster', {
+      vpc: networking.vpc,
     });
 
-    // ---------- Security Groups (keep simple while public IPs are on) ----------
-    const apiSg = new ec2.SecurityGroup(this, 'ApiSg', {
-      vpc,
-      description: 'API service SG',
-      allowAllOutbound: true,
+    // ---------- Security Groups ----------
+    const securityGroups = new SecurityGroups(this, 'SecurityGroups', {
+      vpc: networking.vpc,
     });
 
-    const helloSg = new ec2.SecurityGroup(this, 'HelloSg', {
-      vpc,
-      description: 'Hello service SG',
-      allowAllOutbound: true,
+    // ---------- Hello Service (internal-only via Cloud Map) ----------
+    const helloService = new HelloService(this, 'HelloService', {
+      cluster: ecsCluster.cluster,
+      vpc: networking.vpc,
+      securityGroup: securityGroups.helloSg,
+      image,
+      cloudMapOptions: ecsCluster.getServiceDiscoveryConfig('hello'),
     });
 
-    // API -> Hello on 3001
-    helloSg.addIngressRule(apiSg, ec2.Port.tcp(3001), 'API to Hello (3001)');
-
-    // ---------- Hello service (internal-only via Cloud Map) ----------
-    const helloTaskDef = new ecs.FargateTaskDefinition(this, 'HelloTaskDef', {
-      cpu: 256,
-      memoryLimitMiB: 512,
+    // ---------- API Service (public ALB) ----------
+    const apiService = new ApiService(this, 'ApiService', {
+      cluster: ecsCluster.cluster,
+      vpc: networking.vpc,
+      securityGroup: securityGroups.apiSg,
+      image,
+      helloServiceUrl: 'http://hello.local:3001',
     });
 
-    helloTaskDef.addContainer('HelloContainer', {
-      image: image,
-      portMappings: [{ containerPort: 3001 }],
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'hello' }),
-      environment: {
-        PORT: '3001',
-        SERVICE_DIR: 'services/hello',
-      },
+    // ---------- SQS Queues ----------
+    const sqsQueues = new SqsQueues(this, 'SqsQueues');
+
+    // ---------- Ingest Lambda ----------
+    const ingestLambda = new IngestLambda(this, 'IngestLambda', {
+      lambdaCodePath: path.join(__dirname, '../../lambdas/ingest-queue-reader'),
+      ingestQueue: sqsQueues.ingestQueue,
     });
 
-    const helloService = new ecs.FargateService(this, 'HelloService', {
-      cluster,
-      taskDefinition: helloTaskDef,
-      desiredCount: 1,
-      securityGroups: [helloSg],
-      assignPublicIp: true,                         // IMPORTANT (no NAT/endpoints yet)
-      vpcSubnets: { subnetGroupName: 'public' },   // place ENIs in public subnets
-      cloudMapOptions: {
-        cloudMapNamespace: namespace,
-        name: 'hello',
-        dnsRecordType: servicediscovery.DnsRecordType.A,
-        dnsTtl: Duration.seconds(10),
-      },
-    });
-
-    // ---------- API service (public ALB) ----------
-    const apiService = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'ApiService', {
-      cluster,
-      desiredCount: 1,
-      cpu: 256,
-      memoryLimitMiB: 512,
-      publicLoadBalancer: true,
-      listenerPort: 80,
-      taskSubnets: { subnetGroupName: 'public' },
-      assignPublicIp: true,                        // IMPORTANT (no NAT/endpoints yet)
-      securityGroups: [apiSg],
-      taskImageOptions: {
-        image: image,
-        containerPort: 3000,
-        logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
-        environment: {
-          PORT: '3000',
-          HELLO_URL: 'http://hello.local:3001',   // Service discovery
-          SERVICE_DIR: 'services/api',
-        },
-      },
-    });
-
-    apiService.targetGroup.configureHealthCheck({
-      path: '/healthz',
-      port: '3000',
-      healthyHttpCodes: '200',
-      interval: Duration.seconds(30),
-      timeout: Duration.seconds(5),
-      unhealthyThresholdCount: 2,
-      healthyThresholdCount: 2,
-    });
-
+    // ---------- Permissions and Environment Variables ----------
     // ECR pull permissions
-    repo.grantPull(apiService.taskDefinition.executionRole!);
+    repo.grantPull(apiService.service.taskDefinition.executionRole!);
     repo.grantPull(helloService.taskDefinition.executionRole!);
 
-    // SQS
-    const dlq = new sqs.Queue(this, "IngestDlq", {
-      queueName: "app-ingest-dlq",
-      retentionPeriod: Duration.days(2),
-      enforceSSL: true,
+    // SQS permissions and environment variables
+    sqsQueues.ingestQueue.grantSendMessages(apiService.service.taskDefinition.taskRole);
+    apiService.addEnvironmentVariables({
+      INGEST_QUEUE_URL: sqsQueues.getQueueUrl(),
     });
-
-    const ingestQueue = new sqs.Queue(this, "IngestQueue", {
-      queueName: "app-ingest",
-      visibilityTimeout: Duration.seconds(40),
-      deadLetterQueue: { queue: dlq, maxReceiveCount: 5 },
-      enforceSSL: true,
-    });
-
-    // Grant + inject env
-    ingestQueue.grantSendMessages(apiService.taskDefinition.taskRole);
-
-    // Gather containers safely (defaultContainer if set, else scan children)
-    const containers: ecs.ContainerDefinition[] = [];
-    if (apiService.taskDefinition.defaultContainer) {
-      containers.push(apiService.taskDefinition.defaultContainer);
-    }
-    for (const child of apiService.taskDefinition.node.children) {
-      if (child instanceof ecs.ContainerDefinition && !containers.includes(child)) {
-        containers.push(child);
-      }
-    }
-
-    // Inject env
-    containers.forEach(c => c.addEnvironment("INGEST_QUEUE_URL", ingestQueue.queueUrl));
-
-    const ingestConsumerFn = new lambda.DockerImageFunction(this, 'IngestConsumerFn', {
-      code: lambda.DockerImageCode.fromImageAsset(
-        // adjust if your lambda path differs
-        path.join(__dirname, '../../lambdas/ingest-queue-reader')
-      ),
-      memorySize: 512,
-      timeout: Duration.seconds(20),
-      architecture: lambda.Architecture.X86_64,
-      environment: {
-        LOG_LEVEL: 'info',
-        CONCURRENCY: '10', // how many records to process in parallel inside the handler
-      },
-    });
-  
-    // SQS event source mapping with partial-failure reporting
-    ingestConsumerFn.addEventSource(
-      new lambdaEventSources.SqsEventSource(ingestQueue, {
-        batchSize: 10,                                   // up to 10 msgs per invoke
-        maxBatchingWindow: Duration.seconds(1),          // small buffer for batching
-        reportBatchItemFailures: true,                   // only retry failed records
-      })
-    );
 
     // ---------- Outputs ----------
-    new CfnOutput(this, 'VpcId', { value: vpc.vpcId });
-    new CfnOutput(this, 'PublicSubnets', {
-      value: vpc.selectSubnets({ subnetGroupName: 'public' }).subnetIds.join(','),
-    });
-    new CfnOutput(this, 'IsolatedSubnets', {
-      value: vpc.selectSubnets({ subnetGroupName: 'db-isolated' }).subnetIds.join(','),
-    });
-    new CfnOutput(this, 'AlbDnsName', { value: apiService.loadBalancer.loadBalancerDnsName });
-    new CfnOutput(this, "IngestQueueUrl", { value: ingestQueue.queueUrl });
-
+    new CfnOutput(this, 'VpcId', { value: networking.vpc.vpcId });
+    new CfnOutput(this, 'PublicSubnets', { value: networking.getPublicSubnetIds() });
+    new CfnOutput(this, 'IsolatedSubnets', { value: networking.getIsolatedSubnetIds() });
+    new CfnOutput(this, 'AlbDnsName', { value: apiService.getLoadBalancerDnsName() });
+    new CfnOutput(this, 'IngestQueueUrl', { value: sqsQueues.getQueueUrl() });
   }
 }
