@@ -20,14 +20,13 @@ Tear down local docker containers and AWS infra
 make destroy
 ```
 
-To use the VSCode debugger, start application with...
-```bash
-docker-compose down
-IMAGE_TAG=$(git rev-parse --short HEAD) BUILD_TARGET=dev docker-compose up --build -d app
-```
-...then navigate to Run and Debug in VSCode and start the launch configuration called "Attach to Node.js in Docker (ts-node)"
+To use the VSCode debugger:
+1. Start the application in debug mode: `make run-debug`
+2. Navigate to Run and Debug in VSCode and start "Attach to API in Docker"
 
-When you're done, it's a good idea to run
+The debugger will attach to the production container - no special debug setup needed!
+
+For normal development (no debugging), just use:
 ```bash
-BUILD_TARGET=dev docker-compose down
+make run-local
 ```
