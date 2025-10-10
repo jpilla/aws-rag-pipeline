@@ -17,7 +17,6 @@ services:
       start_period: 10s
 
   api:
-    image: express-api-docker:prod-${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: ./Dockerfile

@@ -1,72 +1,47 @@
-IMAGE_TAG = $(shell git rev-parse --short HEAD)
-IMAGE_NAME := express-api-docker
-ECR_ACCOUNT_ID := 525127693073
-ECR_REGION := eu-west-1
-ECR_REPO := $(ECR_ACCOUNT_ID).dkr.ecr.$(ECR_REGION).amazonaws.com/$(IMAGE_NAME)
+# ========== LOCAL DEVELOPMENT ==========
 
-# ========== TARGETS ==========
-
-.PHONY: help build-api build-local build-image-local run-local run-debug push-image login-ecr deploy integration-tests
+.PHONY: help build-api build-local run-local run-debug integration-tests
 
 help:
 	@echo "Available targets:"
 	@echo "  make build-api          - Build API service locally for debugging"
 	@echo "  make build-local        - Build and run the app locally"
 	@echo "  make run-debug          - Build and run the app in debug mode"
-	@echo "  make build-image-local  - Build the image with docker-compose only"
 	@echo "  make integration-tests  - Run integration tests"
-	@echo "  make deploy             - Build image, push to ECR, and deploy via CDK"
 
 # --- LOCAL DEV ---
-build-image-local:
-	@echo "🧱 Building app image locally (tag: prod-$(IMAGE_TAG))"
-	IMAGE_TAG=$(IMAGE_TAG) docker-compose build api
-
-execute-local:
-	@echo "🚀 Running app locally"
-	IMAGE_TAG=$(IMAGE_TAG) docker-compose up -d api
-
 build-api:
 	@echo "🔨 Building API service locally"
 	cd services/api && npm run build
 
-run-local: build-image-local execute-local
+run-local:
+	@echo "🚀 Running app locally"
+	docker-compose up -d
 
-run-debug: build-api build-image-local
+run-debug: build-api
 	@echo "🐛 Starting app in debug mode"
-	IMAGE_TAG=$(IMAGE_TAG) docker-compose --profile debug up -d api-debug
-
+	docker-compose --profile debug up -d api-debug
 
 integration-tests:
 	@echo "🧪 Running integration tests against local service"
-	IMAGE_TAG=$(IMAGE_TAG) docker-compose run --rm integration-tests
-
-# --- ECR + CDK DEPLOY ---
-login-ecr:
-	@echo "🔐 Logging in to Amazon ECR"
-	aws ecr get-login-password --region $(ECR_REGION) \
-	| docker login --username AWS --password-stdin $(ECR_REPO)
-
-push-image: login-ecr build-image-local
-	@echo "🏷️ Tagging and pushing image to ECR"
-	docker tag $(IMAGE_NAME):prod-$(IMAGE_TAG) $(ECR_REPO):prod-$(IMAGE_TAG)
-	docker push $(ECR_REPO):prod-$(IMAGE_TAG)
-
-deploy: push-image
-	@echo "🚢 Deploying with CDK (tag: prod-$(IMAGE_TAG))"
-	cd infra && npx cdk deploy -c ecrRepo=$(ECR_REPO) -c imageTag=prod-$(IMAGE_TAG)
+	docker-compose run --rm integration-tests
 
 destroy-local:
 	@echo "🧹 Stopping and removing local containers"
 	docker-compose down -v --remove-orphans
 
-remove-image:
-	@echo "🗑️ Removing ECR image prod-$(IMAGE_TAG)"
-	aws ecr batch-delete-image \
-	  --repository-name $(IMAGE_NAME) \
-	  --image-ids imageTag=prod-$(IMAGE_TAG) \
-	  --region $(ECR_REGION) || echo "⚠️ Image not found or already deleted"
+# ========== AWS DEPLOYMENT ==========
 
-destroy: destroy-local remove-image
-	@echo "💣 Destroying CDK stack"
-	cd infra && npx cdk destroy --force -c ecrRepo=$(ECR_REPO) -c imageTag=prod-$(IMAGE_TAG)
+.PHONY: deploy-cloud-resources cdk-diff destroy-cloud-resources destroy-local
+
+deploy-cloud-resources:
+	@echo "🚢 Deploying with CDK (CDK will handle ECR and image management)"
+	cd infra && npx cdk deploy
+
+cdk-diff:
+	@echo "🔍 Showing CDK diff"
+	cd infra && npx cdk diff
+
+destroy-cloud-resources:
+	@echo "💣 Destroying CDK stack (includes ECR cleanup)"
+	cd infra && npx cdk destroy --force
