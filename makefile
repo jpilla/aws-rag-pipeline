@@ -6,11 +6,13 @@ ECR_REPO := $(ECR_ACCOUNT_ID).dkr.ecr.$(ECR_REGION).amazonaws.com/$(IMAGE_NAME)
 
 # ========== TARGETS ==========
 
-.PHONY: help build-local build-image-local run-local push-image login-ecr deploy integration-tests
+.PHONY: help build-api build-local build-image-local run-local run-debug push-image login-ecr deploy integration-tests
 
 help:
 	@echo "Available targets:"
+	@echo "  make build-api          - Build API service locally for debugging"
 	@echo "  make build-local        - Build and run the app locally"
+	@echo "  make run-debug          - Build and run the app in debug mode"
 	@echo "  make build-image-local  - Build the image with docker-compose only"
 	@echo "  make integration-tests  - Run integration tests"
 	@echo "  make deploy             - Build image, push to ECR, and deploy via CDK"
@@ -24,10 +26,16 @@ execute-local:
 	@echo "🚀 Running app locally"
 	IMAGE_TAG=$(IMAGE_TAG) docker-compose up -d api
 
+build-api:
+	@echo "🔨 Building API service locally"
+	cd services/api && npm run build
+
 run-local: build-image-local execute-local
 
-api-debug-up:
-	env -u NODE_OPTIONS docker compose up --build -d api-debug
+run-debug: build-api build-image-local
+	@echo "🐛 Starting app in debug mode"
+	IMAGE_TAG=$(IMAGE_TAG) docker-compose --profile debug up -d api-debug
+
 
 integration-tests:
 	@echo "🧪 Running integration tests against local service"

@@ -10,8 +10,9 @@
       "skipFiles": ["<node_internals>/**"],
       "localRoot": "${workspaceFolder}/services/api",
       "remoteRoot": "/app",
+      "outFiles": ["${workspaceFolder}/services/api/dist/**/*.js"],
       "resolveSourceMapLocations": [
-        "${workspaceFolder}/**",
+        "${workspaceFolder}/services/api/**",
         "!**/node_modules/**"
       ]
     },

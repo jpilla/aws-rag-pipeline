@@ -29,6 +29,8 @@ USER node
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+# Copy source files for debugging source maps
+COPY --from=build /app/src ./src
 # EXPOSE is documentation; real port comes from $PORT + compose mapping
 EXPOSE 3000
 CMD ["npm", "run", "start"]

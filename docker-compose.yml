@@ -37,7 +37,7 @@ services:
   api-debug:
     extends: api
     profiles: ["debug"]
-    command: ["node","--enable-source-maps","--inspect-brk=0.0.0.0:9229","dist/server.js"]
+    command: ["node", "--enable-source-maps", "--inspect-brk=0.0.0.0:9229", "dist/server.js"]
     environment:
       NODE_OPTIONS: ""
     ports:
