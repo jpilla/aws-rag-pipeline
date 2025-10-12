@@ -14,7 +14,11 @@ build-api:
 	@echo "🔨 Building API service locally"
 	cd services/api && npm run build
 
-run-local:
+build-local:
+	@echo "🔨 Building Docker images"
+	docker-compose build
+
+run-local: build-local
 	@echo "🚀 Running app locally"
 	docker-compose up -d
 
