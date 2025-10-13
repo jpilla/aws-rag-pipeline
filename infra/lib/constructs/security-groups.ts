@@ -8,11 +8,13 @@ export interface SecurityGroupsProps {
 export interface SecurityGroupRefs {
   readonly apiSg: ec2.SecurityGroup;
   readonly helloSg: ec2.SecurityGroup;
+  readonly dbSg: ec2.SecurityGroup;
 }
 
 export class SecurityGroups extends Construct {
   public readonly apiSg: ec2.SecurityGroup;
   public readonly helloSg: ec2.SecurityGroup;
+  public readonly dbSg: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props: SecurityGroupsProps) {
     super(scope, id);
@@ -33,8 +35,16 @@ export class SecurityGroups extends Construct {
       allowAllOutbound: true,
     });
 
-    // Configure API -> Hello communication
+    // Database Security Group
+    this.dbSg = new ec2.SecurityGroup(this, 'DbSg', {
+      vpc,
+      description: 'Database and RDS Proxy SG',
+      allowAllOutbound: false, // Database doesn't need outbound access
+    });
+
+    // Configure access rules
     this.configureApiToHelloAccess();
+    this.configureApiToDatabaseAccess();
   }
 
   /**
@@ -50,10 +60,22 @@ export class SecurityGroups extends Construct {
   }
 
   /**
+   * Configure security group rules for API to Database access
+   */
+  private configureApiToDatabaseAccess(): void {
+    // API -> Database on PostgreSQL port 5432
+    this.dbSg.addIngressRule(
+      this.apiSg,
+      ec2.Port.tcp(5432),
+      'API to Database (5432)'
+    );
+  }
+
+  /**
    * Get all security groups as an array
    */
   public getAllSecurityGroups(): ec2.SecurityGroup[] {
-    return [this.apiSg, this.helloSg];
+    return [this.apiSg, this.helloSg, this.dbSg];
   }
 
   /**
@@ -63,6 +85,7 @@ export class SecurityGroups extends Construct {
     return {
       apiSg: this.apiSg,
       helloSg: this.helloSg,
+      dbSg: this.dbSg,
     };
   }
 }
