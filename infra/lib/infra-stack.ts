@@ -14,6 +14,7 @@ import { HelloService } from './constructs/hello-service';
 import { ApiService } from './constructs/api-service';
 import { SqsQueues } from './constructs/sqs-queues';
 import { IngestLambda } from './constructs/ingest-lambda';
+import { Database } from './constructs/database';
 
 export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -62,6 +63,12 @@ export class InfraStack extends Stack {
       vpc: networking.vpc,
     });
 
+    // ---------- Database (RDS with RDS Proxy) ----------
+    const database = new Database(this, 'Database', {
+      vpc: networking.vpc,
+      dbSecurityGroup: securityGroups.dbSg,
+    });
+
     // ---------- Hello Service (internal-only via Cloud Map) ----------
     const helloService = new HelloService(this, 'HelloService', {
       cluster: ecsCluster.cluster,
@@ -96,8 +103,17 @@ export class InfraStack extends Stack {
 
     // SQS permissions and environment variables
     sqsQueues.ingestQueue.grantSendMessages(apiService.service.taskDefinition.taskRole);
+  
+    // Database permissions and environment variables
+    database.grantSecretRead(apiService.service.taskDefinition.taskRole);
+    const dbConfig = database.getConnectionConfig();
+  
     apiService.addEnvironmentVariables({
       INGEST_QUEUE_URL: sqsQueues.getQueueUrl(),
+      DB_HOST: dbConfig.host,
+      DB_PORT: dbConfig.port,
+      DB_NAME: dbConfig.database,
+      DB_SECRET_ARN: dbConfig.secretArn,
     });
 
     // ---------- Outputs ----------
