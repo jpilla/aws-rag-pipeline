@@ -1,8 +1,6 @@
 import * as path from 'path';
-import * as cdk from 'aws-cdk-lib';
 import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { Construct } from 'constructs';
 
@@ -20,35 +18,20 @@ export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    // ---------- ECR Repository ----------
-    const ecrRepo = new ecr.Repository(this, 'EcrRepo', {
-      repositoryName: 'express-api-docker',
-      removalPolicy: cdk.RemovalPolicy.DESTROY, // Allow deletion when stack is destroyed
-      autoDeleteImages: true, // Automatically delete images when repository is deleted
-      lifecycleRules: [{
-        maxImageCount: 10, // Keep only 10 most recent images
-        rulePriority: 1,
-        description: 'Delete old images to save costs',
-      }],
+    // ---------- Container Images ----------
+    const apiImageAsset = new DockerImageAsset(this, "ApiImage", {
+      directory: path.join(__dirname, "../../services/api"), // points to the service folder
+      file: "Dockerfile",
     });
 
-    // ---------- Container Image ----------
-    // CDK will automatically build and push the Docker image from the Dockerfile
-    const image = ecs.ContainerImage.fromDockerImageAsset(
-      new DockerImageAsset(this, 'ApiImage', {
-        directory: path.join(__dirname, '../..'), // Project root
-        file: 'Dockerfile',
-        buildArgs: {
-          SERVICE_DIR: 'services/api',
-        },
-        exclude: [
-          'infra/cdk.out/**',
-          'infra/node_modules/**',
-          'node_modules/**',
-          '.git/**',
-        ],
-      })
-    );
+    const helloImageAsset = new DockerImageAsset(this, "HelloImage", {
+      directory: path.join(__dirname, "../../services/hello"),
+      file: "Dockerfile",
+    });
+
+    // Convert to ECS images
+    const apiImage = ecs.ContainerImage.fromDockerImageAsset(apiImageAsset);
+    const helloImage = ecs.ContainerImage.fromDockerImageAsset(helloImageAsset);
 
     // ---------- Networking ----------
     const networking = new Networking(this, 'Networking');
@@ -74,7 +57,7 @@ export class InfraStack extends Stack {
       cluster: ecsCluster.cluster,
       vpc: networking.vpc,
       securityGroup: securityGroups.helloSg,
-      image,
+      image: helloImage,
       cloudMapOptions: ecsCluster.getServiceDiscoveryConfig('hello'),
     });
 
@@ -83,7 +66,7 @@ export class InfraStack extends Stack {
       cluster: ecsCluster.cluster,
       vpc: networking.vpc,
       securityGroup: securityGroups.apiSg,
-      image,
+      image: apiImage,
       helloServiceUrl: 'http://hello.local:3001',
     });
 
@@ -97,9 +80,6 @@ export class InfraStack extends Stack {
     });
 
     // ---------- Permissions and Environment Variables ----------
-    // ECR pull permissions
-    ecrRepo.grantPull(apiService.service.taskDefinition.executionRole!);
-    ecrRepo.grantPull(helloService.taskDefinition.executionRole!);
 
     // SQS permissions and environment variables
     sqsQueues.ingestQueue.grantSendMessages(apiService.service.taskDefinition.taskRole);
@@ -122,6 +102,5 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'IsolatedSubnets', { value: networking.getIsolatedSubnetIds() });
     new CfnOutput(this, 'AlbDnsName', { value: apiService.getLoadBalancerDnsName() });
     new CfnOutput(this, 'IngestQueueUrl', { value: sqsQueues.getQueueUrl() });
-    new CfnOutput(this, 'EcrRepositoryUri', { value: ecrRepo.repositoryUri });
   }
 }

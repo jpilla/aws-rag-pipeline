@@ -1,10 +1,8 @@
 services:
   hello:
     build:
-      context: .
-      dockerfile: ./Dockerfile
-      args:
-        SERVICE_DIR: services/hello
+      context: ./services/hello
+      dockerfile: Dockerfile
     environment:
       PORT: "${HELLO_PORT:-3001}"
     ports:
@@ -18,10 +16,8 @@ services:
 
   api:
     build:
-      context: .
-      dockerfile: ./Dockerfile
-      args:
-        SERVICE_DIR: services/api
+      context: ./services/api
+      dockerfile: Dockerfile
     environment:
       PORT: "${API_PORT:-3000}"
       HELLO_URL: "http://hello:${HELLO_PORT:-3001}"
