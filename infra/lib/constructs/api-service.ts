@@ -1,8 +1,8 @@
 import { Construct } from 'constructs';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Duration } from 'aws-cdk-lib';
 
 export interface ApiServiceProps {
@@ -12,6 +12,7 @@ export interface ApiServiceProps {
   readonly image: ecs.ContainerImage;
   readonly helloServiceUrl?: string;
   readonly ingestQueueUrl?: string;
+  readonly databaseUrlSecret: secretsmanager.ISecret;
 }
 
 export class ApiService extends Construct {
@@ -20,7 +21,7 @@ export class ApiService extends Construct {
   constructor(scope: Construct, id: string, props: ApiServiceProps) {
     super(scope, id);
 
-    const { cluster, vpc, securityGroup, image, helloServiceUrl, ingestQueueUrl } = props;
+    const { cluster, vpc, securityGroup, image, helloServiceUrl, ingestQueueUrl, databaseUrlSecret } = props;
 
     // Create API service with ALB
     this.service = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'ApiService', {
@@ -39,20 +40,21 @@ export class ApiService extends Construct {
         logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
         environment: {
           PORT: '3000',
-          HELLO_URL: helloServiceUrl || 'http://hello.local:3001', // Service discovery
+          HELLO_URL: helloServiceUrl || 'http://hello.local:3001',
           SERVICE_DIR: 'services/api',
           ...(ingestQueueUrl && { INGEST_QUEUE_URL: ingestQueueUrl }),
         },
       },
     });
 
+    // Inject DATABASE_URL secret into all containers in the task
+    this.addSecretToAllContainers('DATABASE_URL', ecs.Secret.fromSecretsManager(databaseUrlSecret, 'DATABASE_URL'));
+
     // Configure health check
     this.configureHealthCheck();
   }
 
-  /**
-   * Configure health check for the API service
-   */
+  /** Configure health check for the API service */
   private configureHealthCheck(): void {
     this.service.targetGroup.configureHealthCheck({
       path: '/healthz',
@@ -65,33 +67,35 @@ export class ApiService extends Construct {
     });
   }
 
-
-  /**
-   * Add environment variables to all containers in the service
-   */
+  /** Add environment variables to all containers in the service */
   public addEnvironmentVariables(envVars: Record<string, string>): void {
-    // Gather containers safely (defaultContainer if set, else scan children)
+    this.getAllContainers().forEach(container => {
+      Object.entries(envVars).forEach(([k, v]) => container.addEnvironment(k, v));
+    });
+  }
+
+  /** (new) Add a secret to all containers */
+  private addSecretToAllContainers(name: string, secret: ecs.Secret): void {
+    this.getAllContainers().forEach(container => {
+      container.addSecret(name, secret);
+    });
+  }
+
+  /** Gather all containers in the task definition */
+  private getAllContainers(): ecs.ContainerDefinition[] {
     const containers: ecs.ContainerDefinition[] = [];
-    if (this.service.taskDefinition.defaultContainer) {
-      containers.push(this.service.taskDefinition.defaultContainer);
-    }
-    for (const child of this.service.taskDefinition.node.children) {
+    const def = this.service.taskDefinition;
+
+    if (def.defaultContainer) containers.push(def.defaultContainer);
+    for (const child of def.node.children) {
       if (child instanceof ecs.ContainerDefinition && !containers.includes(child)) {
         containers.push(child);
       }
     }
-
-    // Add environment variables to all containers
-    containers.forEach(container => {
-      Object.entries(envVars).forEach(([key, value]) => {
-        container.addEnvironment(key, value);
-      });
-    });
+    return containers;
   }
 
-  /**
-   * Get the load balancer DNS name
-   */
+  /** Get the load balancer DNS name */
   public getLoadBalancerDnsName(): string {
     return this.service.loadBalancer.loadBalancerDnsName;
   }

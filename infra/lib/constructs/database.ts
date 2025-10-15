@@ -14,6 +14,7 @@ export class Database extends Construct {
   public readonly proxy: rds.DatabaseProxy;
   public readonly secret: secretsmanager.Secret;
   public readonly proxyEndpoint: string;
+  public readonly databaseUrlSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: DatabaseProps) {
     super(scope, id);
@@ -30,6 +31,19 @@ export class Database extends Construct {
         includeSpace: false,
         passwordLength: 32,
       },
+    });
+
+    const dbName = this.getConnectionConfig().database;
+    // This secret stores a runtime-resolved DATABASE_URL that always uses the
+    // CURRENT username/password from your master secret and the proxy endpoint.
+    this.databaseUrlSecret = new secretsmanager.Secret(this, 'DatabaseUrlSecret', {
+      secretName: 'embeddings-database-url',
+      secretStringValue: cdk.SecretValue.unsafePlainText(
+        'postgresql://' +
+        `{{resolve:secretsmanager:${this.secret.secretArn}:SecretString:username}}:` +
+        `{{resolve:secretsmanager:${this.secret.secretArn}:SecretString:password}}` +
+        `@${this.proxyEndpoint}:5432/${dbName}?sslmode=require`
+      ),
     });
 
     // Select isolated subnets for database

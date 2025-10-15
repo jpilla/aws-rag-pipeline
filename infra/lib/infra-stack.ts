@@ -68,6 +68,7 @@ export class InfraStack extends Stack {
       securityGroup: securityGroups.apiSg,
       image: apiImage,
       helloServiceUrl: 'http://hello.local:3001',
+      databaseUrlSecret: database.databaseUrlSecret,
     });
 
     // ---------- SQS Queues ----------
@@ -86,6 +87,8 @@ export class InfraStack extends Stack {
   
     // Database permissions and environment variables
     database.grantSecretRead(apiService.service.taskDefinition.taskRole);
+    // allow the task to read the DATABASE_URL secret
+    database.databaseUrlSecret.grantRead(apiService.service.taskDefinition.taskRole); 
     const dbConfig = database.getConnectionConfig();
   
     apiService.addEnvironmentVariables({
