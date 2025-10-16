@@ -52,25 +52,6 @@ export class InfraStack extends Stack {
       dbSecurityGroup: securityGroups.dbSg,
     });
 
-    // ---------- Hello Service (internal-only via Cloud Map) ----------
-    const helloService = new HelloService(this, 'HelloService', {
-      cluster: ecsCluster.cluster,
-      vpc: networking.vpc,
-      securityGroup: securityGroups.helloSg,
-      image: helloImage,
-      cloudMapOptions: ecsCluster.getServiceDiscoveryConfig('hello'),
-    });
-
-    // ---------- API Service (public ALB) ----------
-    const apiService = new ApiService(this, 'ApiService', {
-      cluster: ecsCluster.cluster,
-      vpc: networking.vpc,
-      securityGroup: securityGroups.apiSg,
-      image: apiImage,
-      helloServiceUrl: 'http://hello.local:3001',
-      databaseUrlSecret: database.databaseUrlSecret,
-    });
-
     // ---------- SQS Queues ----------
     const sqsQueues = new SqsQueues(this, 'SqsQueues');
 
@@ -80,24 +61,36 @@ export class InfraStack extends Stack {
       ingestQueue: sqsQueues.ingestQueue,
     });
 
+    // ---------- Hello Service (internal-only via Cloud Map) ----------
+    const helloService = new HelloService(this, 'HelloService', {
+      cluster: ecsCluster.cluster,
+      vpc: networking.vpc,
+      securityGroup: securityGroups.helloSg,
+      image: helloImage,
+      cloudMapOptions: ecsCluster.getServiceDiscoveryConfig('hello'),
+    });
+
+    const apiService = new ApiService(this, 'ApiService', {
+      cluster: ecsCluster.cluster,
+      securityGroup: securityGroups.apiSg,
+      image: apiImage,
+      helloServiceUrl: 'http://hello.local:3001',
+      ingestQueueUrl: sqsQueues.ingestQueue.queueUrl,
+      databaseSecret: database.secret,
+      dbHost: database.proxy.endpoint,
+      dbName: 'embeddings',
+    });
+
+    database.secret.grantRead(apiService.service.taskDefinition.executionRole!);
+    database.secret.grantRead(apiService.service.taskDefinition.taskRole!);
+
+    // make sure ECS waits for DB resources
+    apiService.node.addDependency(database);
+
     // ---------- Permissions and Environment Variables ----------
 
     // SQS permissions and environment variables
     sqsQueues.ingestQueue.grantSendMessages(apiService.service.taskDefinition.taskRole);
-  
-    // Database permissions and environment variables
-    database.grantSecretRead(apiService.service.taskDefinition.taskRole);
-    // allow the task to read the DATABASE_URL secret
-    database.databaseUrlSecret.grantRead(apiService.service.taskDefinition.taskRole); 
-    const dbConfig = database.getConnectionConfig();
-  
-    apiService.addEnvironmentVariables({
-      INGEST_QUEUE_URL: sqsQueues.getQueueUrl(),
-      DB_HOST: dbConfig.host,
-      DB_PORT: dbConfig.port,
-      DB_NAME: dbConfig.database,
-      DB_SECRET_ARN: dbConfig.secretArn,
-    });
 
     // ---------- Outputs ----------
     new CfnOutput(this, 'VpcId', { value: networking.vpc.vpcId });
