@@ -1,17 +1,22 @@
 import { Construct } from 'constructs';
+import * as cdk from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Duration } from 'aws-cdk-lib';
 
 export interface ApiServiceProps {
   readonly cluster: ecs.Cluster;
-  readonly vpc: ec2.IVpc;
   readonly securityGroup: ec2.SecurityGroup;
   readonly image: ecs.ContainerImage;
+
   readonly helloServiceUrl?: string;
   readonly ingestQueueUrl?: string;
+
+  readonly databaseSecret: secretsmanager.ISecret;
+  readonly dbHost: string;
+  readonly dbName: string;
 }
 
 export class ApiService extends Construct {
@@ -20,9 +25,28 @@ export class ApiService extends Construct {
   constructor(scope: Construct, id: string, props: ApiServiceProps) {
     super(scope, id);
 
-    const { cluster, vpc, securityGroup, image, helloServiceUrl, ingestQueueUrl } = props;
+    const {
+      cluster,
+      securityGroup,
+      image,
+      helloServiceUrl,
+      ingestQueueUrl,
+      databaseSecret,
+      dbHost,
+      dbName,
+    } = props;
 
-    // Create API service with ALB
+    // Build envs clearly (no "weird" spread)
+    const env: Record<string, string> = {
+      PORT: '3000',
+      HELLO_URL: helloServiceUrl ?? 'http://hello.local:3001',
+      SERVICE_DIR: 'services/api',
+      DB_HOST: dbHost,
+      DB_NAME: dbName,
+      DB_PORT: '5432',
+      ...(ingestQueueUrl && { INGEST_QUEUE_URL: ingestQueueUrl }),
+    };
+
     this.service = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'ApiService', {
       cluster,
       desiredCount: 1,
@@ -31,29 +55,21 @@ export class ApiService extends Construct {
       publicLoadBalancer: true,
       listenerPort: 80,
       taskSubnets: { subnetGroupName: 'public' },
-      assignPublicIp: true, // IMPORTANT (no NAT/endpoints yet)
+      assignPublicIp: true,
       securityGroups: [securityGroup],
       taskImageOptions: {
         image,
         containerPort: 3000,
         logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
-        environment: {
-          PORT: '3000',
-          HELLO_URL: helloServiceUrl || 'http://hello.local:3001', // Service discovery
-          SERVICE_DIR: 'services/api',
-          ...(ingestQueueUrl && { INGEST_QUEUE_URL: ingestQueueUrl }),
+        environment: env,
+        secrets: {
+          DB_USER: ecs.Secret.fromSecretsManager(databaseSecret, 'username'),
+          DB_PASSWORD: ecs.Secret.fromSecretsManager(databaseSecret, 'password'),
         },
       },
     });
 
-    // Configure health check
-    this.configureHealthCheck();
-  }
-
-  /**
-   * Configure health check for the API service
-   */
-  private configureHealthCheck(): void {
+    // Health check
     this.service.targetGroup.configureHealthCheck({
       path: '/healthz',
       port: '3000',
@@ -63,35 +79,12 @@ export class ApiService extends Construct {
       unhealthyThresholdCount: 2,
       healthyThresholdCount: 2,
     });
+
+    // Give the ECS agent + task permission to read the DB secret
+    databaseSecret.grantRead(this.service.taskDefinition.executionRole!);
+    databaseSecret.grantRead(this.service.taskDefinition.taskRole);
   }
 
-
-  /**
-   * Add environment variables to all containers in the service
-   */
-  public addEnvironmentVariables(envVars: Record<string, string>): void {
-    // Gather containers safely (defaultContainer if set, else scan children)
-    const containers: ecs.ContainerDefinition[] = [];
-    if (this.service.taskDefinition.defaultContainer) {
-      containers.push(this.service.taskDefinition.defaultContainer);
-    }
-    for (const child of this.service.taskDefinition.node.children) {
-      if (child instanceof ecs.ContainerDefinition && !containers.includes(child)) {
-        containers.push(child);
-      }
-    }
-
-    // Add environment variables to all containers
-    containers.forEach(container => {
-      Object.entries(envVars).forEach(([key, value]) => {
-        container.addEnvironment(key, value);
-      });
-    });
-  }
-
-  /**
-   * Get the load balancer DNS name
-   */
   public getLoadBalancerDnsName(): string {
     return this.service.loadBalancer.loadBalancerDnsName;
   }
