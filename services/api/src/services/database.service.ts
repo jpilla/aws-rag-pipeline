@@ -1,7 +1,3 @@
-import {
-  SecretsManagerClient,
-  GetSecretValueCommand,
-} from "@aws-sdk/client-secrets-manager";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
 interface DatabaseCredentials {
@@ -14,11 +10,9 @@ interface DatabaseCredentials {
  */
 export class DatabaseService {
   private pool?: Pool;
-  private secretsClient: SecretsManagerClient;
   private host: string;
   private port: number;
   private database: string;
-  private secretArn: string;
   private credentials?: DatabaseCredentials;
 
   constructor() {
@@ -26,48 +20,29 @@ export class DatabaseService {
     this.host = process.env.DB_HOST || "localhost";
     this.port = parseInt(process.env.DB_PORT || "5432", 10);
     this.database = process.env.DB_NAME || "embeddings";
-    this.secretArn = process.env.DB_SECRET_ARN || "";
-
-    // Initialize AWS Secrets Manager client
-    this.secretsClient = new SecretsManagerClient({
-      region: process.env.AWS_REGION || "us-east-1",
-    });
   }
 
   /**
-   * Retrieve database credentials from AWS Secrets Manager
+   * Retrieve database credentials from environment variables (ECS secrets)
    */
   private async getCredentials(): Promise<DatabaseCredentials> {
     if (this.credentials) {
       return this.credentials;
     }
 
-    if (!this.secretArn) {
-      throw new Error("DB_SECRET_ARN environment variable is not set");
+    const username = process.env.DB_USER;
+    const password = process.env.DB_PASSWORD;
+
+    if (!username || !password) {
+      throw new Error("DB_USER and DB_PASSWORD environment variables are required");
     }
 
-    try {
-      const response = await this.secretsClient.send(
-        new GetSecretValueCommand({
-          SecretId: this.secretArn,
-        })
-      );
+    this.credentials = {
+      username,
+      password,
+    };
 
-      if (!response.SecretString) {
-        throw new Error("Secret value is empty");
-      }
-
-      const secret = JSON.parse(response.SecretString);
-      this.credentials = {
-        username: secret.username,
-        password: secret.password,
-      };
-
-      return this.credentials;
-    } catch (error) {
-      console.error("Failed to retrieve database credentials:", error);
-      throw error;
-    }
+    return this.credentials;
   }
 
   /**

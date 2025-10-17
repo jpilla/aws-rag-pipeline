@@ -35,13 +35,14 @@ export class ApiService extends Construct {
       dbName,
     } = props;
 
-    // Build envs clearly (no “weird” spread)
+    // Build envs clearly (no "weird" spread)
     const env: Record<string, string> = {
       PORT: '3000',
       HELLO_URL: helloServiceUrl ?? 'http://hello.local:3001',
       SERVICE_DIR: 'services/api',
       DB_HOST: dbHost,
       DB_NAME: dbName,
+      DB_PORT: '5432',
       ...(ingestQueueUrl && { INGEST_QUEUE_URL: ingestQueueUrl }),
     };
 

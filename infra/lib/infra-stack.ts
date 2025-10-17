@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { Construct } from 'constructs';
 
@@ -80,6 +81,20 @@ export class InfraStack extends Stack {
       dbHost: database.proxy.endpoint,
       dbName: 'embeddings',
     });
+
+    // Allow API tasks to reach the RDS Proxy on 5432
+    database.proxy.connections.allowFrom(
+      securityGroups.apiSg,
+      ec2.Port.tcp(5432),
+      'API to Proxy 5432'
+    );
+
+    // Allow the Proxy to reach the DB instance on 5432
+    database.instance.connections.allowFrom(
+      database.proxy,
+      ec2.Port.tcp(5432),
+      'Proxy to DB 5432'
+    );
 
     database.secret.grantRead(apiService.service.taskDefinition.executionRole!);
     database.secret.grantRead(apiService.service.taskDefinition.taskRole!);
