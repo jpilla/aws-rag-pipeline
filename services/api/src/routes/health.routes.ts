@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { makeHelloClient } from "../helloClient";
-import { databaseService } from "../services/database.service";
+import { prismaService } from "../services/prisma.service";
 
 const router = Router();
 const hello = makeHelloClient();
@@ -33,7 +33,7 @@ router.get("/readyz", async (_req, res) => {
  */
 router.get("/db-health", async (_req, res) => {
   try {
-    const result = await databaseService.testConnection();
+    const result = await prismaService.testConnection();
     if (result.success) {
       res.json({
         status: "ok",

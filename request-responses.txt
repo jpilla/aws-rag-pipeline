@@ -165,3 +165,81 @@ Note: Unnecessary use of -X or --request, POST is already inferred.
   ],
   "errors": []
 }
+
+
+
+
+
+
+
+❯ curl -X POST "http://InfraS-ApiSe-2wSyfOnexjnF-1714920650.eu-west-1.elb.amazonaws.com/v1/embeddings" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "embeddings": [
+      {
+        "id": "embedding-001",
+        "docId": "doc-123",
+        "chunkIndex": 0,
+        "content": "This is the first chunk of content to be embedded.",
+        "embedding": [0.1, 0.2, 0.3, 0.4, 0.5]
+      },
+      {
+        "id": "embedding-002",
+        "docId": "doc-123",
+        "chunkIndex": 1,
+        "content": "This is the second chunk of content to be embedded.",
+        "embedding": [0.6, 0.7, 0.8, 0.9, 1.0]
+      }
+    ]
+  }' | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   594  100   120  100   474    408   1613 --:--:-- --:--:-- --:--:--  2027
+{
+  "success": true,
+  "message": "Successfully created/updated 2 embeddings",
+  "count": 2,
+  "ids": [
+    "embedding-001",
+    "embedding-002"
+  ]
+}
+
+❯ curl -X GET "http://InfraS-ApiSe-2wSyfOnexjnF-1714920650.eu-west-1.elb.amazonaws.com/v1/embeddings?ids=embedding-001,embedding-002" | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   424  100   424    0     0   4341      0 --:--:-- --:--:-- --:--:--  4371
+{
+  "success": true,
+  "count": 2,
+  "embeddings": [
+    {
+      "id": "embedding-002",
+      "docId": "doc-123",
+      "chunkIndex": 1,
+      "content": "This is the second chunk of content to be embedded.",
+      "embedding": [
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1
+      ],
+      "createdAt": "2025-10-17T21:08:45.101Z"
+    },
+    {
+      "id": "embedding-001",
+      "docId": "doc-123",
+      "chunkIndex": 0,
+      "content": "This is the first chunk of content to be embedded.",
+      "embedding": [
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5
+      ],
+      "createdAt": "2025-10-17T21:08:45.101Z"
+    }
+  ]
+}
