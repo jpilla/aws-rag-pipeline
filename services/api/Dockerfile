@@ -42,11 +42,6 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 
-# # Ensure prisma CLI is present for migrations even if it's in devDependencies
-# # (install specific version if defined; otherwise 'latest')
-# RUN PRISMA_VER=$(node -e "const p=require('./package.json'); const v=(p.dependencies&&p.dependencies.prisma)||(p.devDependencies&&p.devDependencies.prisma)||''; process.stdout.write(v||'latest')") \
-#     && npm i --no-save prisma@${PRISMA_VER}
-
 # Entry point: compose DATABASE_URL from ECS env, run migrations, start server
 RUN printf '%s\n' \
     '#!/usr/bin/env sh' \

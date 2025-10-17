@@ -1,4 +1,5 @@
 import { Construct } from 'constructs';
+import * as cdk from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
@@ -13,9 +14,9 @@ export interface ApiServiceProps {
   readonly helloServiceUrl?: string;
   readonly ingestQueueUrl?: string;
 
-  readonly databaseSecret: secretsmanager.ISecret; // { username, password }
-  readonly dbHost: string;                          // RDS Proxy endpoint
-  readonly dbName: string;                          // e.g. "embeddings"
+  readonly databaseSecret: secretsmanager.ISecret;
+  readonly dbHost: string;
+  readonly dbName: string;
 }
 
 export class ApiService extends Construct {
@@ -54,7 +55,7 @@ export class ApiService extends Construct {
       publicLoadBalancer: true,
       listenerPort: 80,
       taskSubnets: { subnetGroupName: 'public' },
-      assignPublicIp: true, // fine for POC
+      assignPublicIp: true,
       securityGroups: [securityGroup],
       taskImageOptions: {
         image,
@@ -82,9 +83,6 @@ export class ApiService extends Construct {
     // Give the ECS agent + task permission to read the DB secret
     databaseSecret.grantRead(this.service.taskDefinition.executionRole!);
     databaseSecret.grantRead(this.service.taskDefinition.taskRole);
-
-    // // Optional startup grace (migrations)
-    // this.service.service.healthCheckGracePeriod = Duration.seconds(60);
   }
 
   public getLoadBalancerDnsName(): string {

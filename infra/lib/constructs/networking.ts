@@ -20,7 +20,7 @@ export class Networking extends Construct {
     // Create VPC with public and isolated subnets
     this.vpc = new ec2.Vpc(this, 'AppVpc', {
       maxAzs: 2,
-      natGateways: 1, // must be > 0 to get PRIVATE_WITH_EGRESS
+      natGateways: 1,
       subnetConfiguration: [
         { name: 'public',          subnetType: ec2.SubnetType.PUBLIC,              cidrMask: 24 },
         { name: 'private-egress',  subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 24 },
