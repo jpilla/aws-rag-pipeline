@@ -40,7 +40,7 @@ destroy-local:
 
 deploy-cloud-resources:
 	@echo "🚢 Deploying with CDK (CDK will handle ECR and image management)"
-	cd infra && npx cdk deploy
+	cd infra && npx cdk deploy --no-rollback
 
 cdk-diff:
 	@echo "🔍 Showing CDK diff"
