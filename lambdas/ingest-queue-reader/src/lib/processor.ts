@@ -1,13 +1,133 @@
 import { logger } from "./logger.js";
+import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+import { PrismaClient } from "@prisma/client";
 
 export type Payload = {
-  type: string;
-  data: unknown;
+  chunkId: string;
+  clientId: string;
+  content: any;
+  metadata: Record<string, any>;
+  batchId: string;
+  enqueuedAt: string;
 };
 
-export async function processOne(messageId: string, payload: Payload): Promise<void> {
-  // TODO: switch on payload.type, route to specific handlers
-  logger.info({ messageId, payload }, "Processing SQS message");
-  // Simulate work (DB write, call internal service, etc.)
-  // Throw to fail this one record only (with reportBatchItemFailures enabled).
+let prismaClient: PrismaClient | null = null;
+
+async function getPrismaClient(): Promise<PrismaClient> {
+  if (prismaClient) {
+    return prismaClient;
+  }
+
+  const secretsClient = new SecretsManagerClient({});
+  const secretArn = process.env.DB_SECRET_ARN;
+  
+  if (!secretArn) {
+    throw new Error("DB_SECRET_ARN environment variable not set");
+  }
+
+  const command = new GetSecretValueCommand({ SecretId: secretArn });
+  const secretValue = await secretsClient.send(command);
+  
+  if (!secretValue.SecretString) {
+    throw new Error("Failed to retrieve database credentials");
+  }
+
+  const credentials = JSON.parse(secretValue.SecretString);
+  
+  // Construct DATABASE_URL like the API service does
+  const host = process.env.DB_HOST || 'localhost';
+  const port = process.env.DB_PORT || '5432';
+  const database = process.env.DB_NAME || 'embeddings';
+  const databaseUrl = `postgresql://${credentials.username}:${credentials.password}@${host}:${port}/${database}?sslmode=require`;
+
+  prismaClient = new PrismaClient({
+    datasources: {
+      db: {
+        url: databaseUrl,
+      },
+    },
+    log: ['error', 'warn'],
+  });
+
+  logger.info("Prisma client initialized");
+  return prismaClient;
+}
+
+export type ProcessedRecord = {
+  messageId: string;
+  payload: Payload;
+  success: boolean;
+  error?: string;
+};
+
+export async function processBatch(records: Array<{ messageId: string; payload: Payload }>): Promise<ProcessedRecord[]> {
+  logger.info({ recordCount: records.length }, "Processing batch of SQS messages");
+  
+  const prisma = await getPrismaClient();
+  const results: ProcessedRecord[] = [];
+  
+  try {
+    // Transform all records into embedding data
+    const embeddingData = records.map(record => ({
+      id: record.payload.chunkId || record.messageId,
+      docId: record.payload.clientId, // Use clientId as docId
+      chunkIndex: record.payload.metadata?.chunkIndex || 0,
+      content: typeof record.payload.content === 'string' 
+        ? record.payload.content 
+        : JSON.stringify(record.payload.content),
+      embedding: record.payload.metadata?.embedding || [], // Extract embedding from metadata if present
+    }));
+    
+    // Log all record fields before database insert
+    logger.info({ 
+      recordCount: embeddingData.length,
+      records: embeddingData.map((data, index) => ({
+        index,
+        id: data.id,
+        docId: data.docId,
+        chunkIndex: data.chunkIndex,
+        contentLength: data.content.length,
+        embeddingLength: data.embedding.length,
+        contentPreview: data.content.substring(0, 100) + (data.content.length > 100 ? '...' : ''),
+        embeddingPreview: data.embedding.slice(0, 5) // Show first 5 embedding values
+      }))
+    }, "About to insert records into database");
+    
+    // Use a transaction to insert all records at once
+    await prisma.$transaction(async (tx: any) => {
+      await tx.embedding.createMany({
+        data: embeddingData,
+        skipDuplicates: true, // Skip duplicates instead of failing
+      });
+    });
+    
+    // All records succeeded
+    records.forEach(record => {
+      results.push({
+        messageId: record.messageId,
+        payload: record.payload,
+        success: true,
+      });
+    });
+    
+    logger.info({ 
+      recordCount: records.length,
+      successCount: results.length 
+    }, "Successfully processed batch");
+    
+  } catch (error) {
+    logger.error({ error, recordCount: records.length }, "Batch processing failed - marking all records as failed");
+    
+    // If the transaction fails, mark all records as failed
+    records.forEach(record => {
+      results.push({
+        messageId: record.messageId,
+        payload: record.payload,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+  }
+  
+  return results;
 }

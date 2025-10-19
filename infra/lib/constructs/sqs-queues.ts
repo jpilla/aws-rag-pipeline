@@ -19,7 +19,7 @@ export class SqsQueues extends Construct {
     // Create main ingest queue
     this.ingestQueue = new sqs.Queue(this, 'IngestQueue', {
       queueName: 'app-ingest',
-      visibilityTimeout: Duration.seconds(40),
+      visibilityTimeout: Duration.seconds(20),
       deadLetterQueue: {
         queue: this.dlq,
         maxReceiveCount: 5

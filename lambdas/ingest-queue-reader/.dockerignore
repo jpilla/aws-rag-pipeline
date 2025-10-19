@@ -1,5 +1,24 @@
-node_modules
+# CDK build artifacts
+cdk.out
+**/cdk.out/**
+
+# Git
+.git
+
+# Dependencies
+**/node_modules/**
+
+# Build artifacts
 dist
-npm-debug.log
-Dockerfile
+**/dist/**
 .tsbuildinfo
+
+# System files
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log
+
+# Docker
+Dockerfile

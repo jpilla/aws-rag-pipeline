@@ -1,4 +1,8 @@
-node_modules
+cdk.out
+infra/cdk.out
+**/cdk.out/**
+.git
+**/node_modules/**
+.DS_Storenode_modules
 npm-debug.log
-Dockerfile
-dist
+Dockerfiledist
