@@ -2,11 +2,12 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY package*.json ./
+COPY lambdas/ingest-queue-reader/package*.json ./
 RUN npm ci
 
-COPY tsconfig.json ./
-COPY src ./src
+COPY lambdas/ingest-queue-reader/tsconfig.json ./
+COPY lambdas/ingest-queue-reader/src ./src
+COPY prisma/schema.prisma ./prisma/schema.prisma
 
 RUN npm run build
 
@@ -15,7 +16,7 @@ FROM public.ecr.aws/lambda/nodejs:20
 WORKDIR /var/task
 
 # Install prod deps
-COPY package*.json ./
+COPY lambdas/ingest-queue-reader/package*.json ./
 RUN npm ci --omit=dev
 
 # Copy compiled JS

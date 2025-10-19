@@ -58,8 +58,13 @@ export class InfraStack extends Stack {
 
     // ---------- Ingest Lambda ----------
     const ingestLambda = new IngestLambda(this, 'IngestLambda', {
-      lambdaCodePath: path.join(__dirname, '../../lambdas/ingest-queue-reader'),
+      lambdaCodePath: path.join(__dirname, '../../'),
       ingestQueue: sqsQueues.ingestQueue,
+      vpc: networking.vpc,
+      securityGroup: securityGroups.apiSg, // Reuse API security group for database access
+      databaseSecret: database.secret,
+      dbHost: database.proxy.endpoint,
+      dbName: 'embeddings',
     });
 
     // ---------- Hello Service (internal-only via Cloud Map) ----------
