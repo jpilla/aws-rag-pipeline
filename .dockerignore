@@ -1,5 +1,20 @@
+# CDK build artifacts
+cdk.out
+**/cdk.out/**
+
+# Git
 .git
-node_modules
+
+# Dependencies
+**/node_modules/**
+
+# Build artifacts
 dist
-.env
+**/dist/**
+
+# System files
+.DS_Store
+
+# Logs
 *.log
+npm-debug.log

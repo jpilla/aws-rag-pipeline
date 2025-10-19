@@ -24,15 +24,15 @@ export class IngestLambda extends Construct {
 
     const { lambdaCodePath, ingestQueue, vpc, securityGroup, databaseSecret, dbHost, dbName } = props;
 
-    // Create Lambda function
     this.function = new lambda.DockerImageFunction(this, 'IngestConsumerFn', {
       code: lambda.DockerImageCode.fromImageAsset(lambdaCodePath, {
+        // Build context is project root, Dockerfile is in lambdas/ingest-queue-reader/
         file: 'lambdas/ingest-queue-reader/Dockerfile',
       }),
       memorySize: 512,
       timeout: Duration.seconds(15),
       architecture: lambda.Architecture.X86_64,
-      vpc: vpc,
+      vpc,
       vpcSubnets: { subnetGroupName: 'private-egress' },
       securityGroups: [securityGroup],
       environment: {

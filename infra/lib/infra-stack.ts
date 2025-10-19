@@ -58,10 +58,11 @@ export class InfraStack extends Stack {
 
     // ---------- Ingest Lambda ----------
     const ingestLambda = new IngestLambda(this, 'IngestLambda', {
-      lambdaCodePath: path.join(__dirname, '../../'),
+      // ⛳️ Use project root so both lambda and prisma are accessible
+      lambdaCodePath: path.join(__dirname, '../..'),
       ingestQueue: sqsQueues.ingestQueue,
       vpc: networking.vpc,
-      securityGroup: securityGroups.apiSg, // Reuse API security group for database access
+      securityGroup: securityGroups.apiSg,
       databaseSecret: database.secret,
       dbHost: database.proxy.endpoint,
       dbName: 'embeddings',
