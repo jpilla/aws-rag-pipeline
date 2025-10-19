@@ -2,11 +2,15 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY package*.json ./
+# Prisma engines need these on alpine during build
+RUN apk add --no-cache openssl libc6-compat
+
+COPY lambdas/ingest-queue-reader/package*.json ./
 RUN npm ci
 
-COPY tsconfig.json ./
-COPY src ./src
+COPY lambdas/ingest-queue-reader/tsconfig.json ./
+COPY lambdas/ingest-queue-reader/src ./src
+COPY prisma/schema.prisma ./prisma/schema.prisma
 
 RUN npm run build
 
@@ -15,8 +19,12 @@ FROM public.ecr.aws/lambda/nodejs:20
 WORKDIR /var/task
 
 # Install prod deps
-COPY package*.json ./
+COPY lambdas/ingest-queue-reader/package*.json ./
 RUN npm ci --omit=dev
+
+# Copy Prisma schema and generate client for Lambda runtime
+COPY prisma/schema.prisma ./prisma/schema.prisma
+RUN npx prisma generate
 
 # Copy compiled JS
 COPY --from=build /app/dist ./

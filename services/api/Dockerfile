@@ -14,7 +14,8 @@ RUN apk add --no-cache openssl libc6-compat
 COPY package*.json ./
 COPY tsconfig.json ./
 COPY src ./src
-COPY prisma ./prisma
+COPY prisma/schema.prisma ./prisma/schema.prisma
+COPY prisma/migrations/20251016003025_init ./prisma/migrations/20251016003025_init
 
 # bring installed deps (incl. dev deps) from deps stage
 COPY --from=deps /app/node_modules ./node_modules
@@ -40,7 +41,8 @@ RUN apk add --no-cache openssl libc6-compat
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/prisma/schema.prisma ./prisma/schema.prisma
+COPY --from=build /app/prisma/migrations/20251016003025_init ./prisma/migrations/20251016003025_init
 
 # Entry point: compose DATABASE_URL from ECS env, run migrations, start server
 RUN printf '%s\n' \

@@ -1,6 +1,6 @@
 import type { SQSBatchItemFailure, SQSBatchResponse, SQSHandler } from "aws-lambda";
 import { logger } from "./lib/logger.js";
-import { processOne, type Payload } from "./lib/processor.js";
+import { processBatch, type Payload } from "./lib/processor.js";
 
 const parseJson = (s: string) => {
   try {
@@ -15,30 +15,50 @@ export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
 
   logger.info({ records: event.Records.length, awsRequestId: (event as any).requestContext?.requestId }, "SQS batch received");
 
-  const concurrency = Number(process.env.CONCURRENCY ?? "10");
-  const chunks = chunk(event.Records, concurrency);
+  // Parse all records and separate valid from invalid ones
+  const validRecords: Array<{ messageId: string; payload: Payload }> = [];
+  
+  for (const record of event.Records) {
+    const messageId = record.messageId;
+    const body = record.body;
+    const payload = parseJson(body);
 
-  for (const group of chunks) {
-    await Promise.all(
-      group.map(async (record) => {
-        const messageId = record.messageId;
-        const body = record.body;
-        const payload = parseJson(body);
+    if (!payload) {
+      logger.warn({ messageId }, "Malformed JSON in SQS body");
+      failures.push({ itemIdentifier: messageId });
+    } else {
+      validRecords.push({ messageId, payload });
+    }
+  }
 
-        if (!payload) {
-          logger.warn({ messageId }, "Malformed JSON in SQS body");
-          failures.push({ itemIdentifier: messageId });
-          return;
+  // Process all valid records in a single batch
+  if (validRecords.length > 0) {
+    try {
+      const results = await processBatch(validRecords);
+      
+      // Add any failed records to the failures list
+      results.forEach(result => {
+        if (!result.success) {
+          failures.push({ itemIdentifier: result.messageId });
         }
-
-        try {
-          await processOne(messageId, payload);
-        } catch (err: any) {
-          logger.error({ err, messageId }, "Message processing failed");
-          failures.push({ itemIdentifier: messageId });
-        }
-      })
-    );
+      });
+      
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.filter(r => !r.success).length;
+      
+      logger.info({ 
+        total: validRecords.length, 
+        success: successCount, 
+        failed: failureCount 
+      }, "Batch processing completed");
+      
+    } catch (err: any) {
+      logger.error({ err }, "Batch processing failed completely");
+      // If the entire batch fails, mark all valid records as failed
+      validRecords.forEach(record => {
+        failures.push({ itemIdentifier: record.messageId });
+      });
+    }
   }
 
   if (failures.length) {
@@ -49,9 +69,3 @@ export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
 
   return { batchItemFailures: failures };
 };
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
