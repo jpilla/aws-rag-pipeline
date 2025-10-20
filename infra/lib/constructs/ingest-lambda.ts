@@ -37,7 +37,6 @@ export class IngestLambda extends Construct {
       securityGroups: [securityGroup],
       environment: {
         LOG_LEVEL: 'info',
-        CONCURRENCY: '10',
         DB_HOST: dbHost,
         DB_NAME: dbName,
         DB_PORT: '5432',
