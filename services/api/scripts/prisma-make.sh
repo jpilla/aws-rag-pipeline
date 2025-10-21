@@ -3,9 +3,9 @@ set -euo pipefail
 
 NAME="${1:-migration}"
 TS="$(date +%Y%m%d%H%M%S)"
-MIG_DIR="prisma/migrations/${TS}_${NAME}"
-SNAP_DIR="prisma/snapshots"
-CUR_SCHEMA="prisma/schema.prisma"
+MIG_DIR="../../prisma/migrations/${TS}_${NAME}"
+SNAP_DIR="../../prisma/snapshots"
+CUR_SCHEMA="../../prisma/schema.prisma"
 
 mkdir -p "$MIG_DIR" "$SNAP_DIR"
 

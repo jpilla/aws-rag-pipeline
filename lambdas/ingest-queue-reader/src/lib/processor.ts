@@ -67,11 +67,11 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
   const results: ProcessedRecord[] = [];
   
   try {
-    // Transform all records into embedding data
-    const embeddingData = records.map(record => ({
+    // Transform all records into embedding data with auto-incremented chunkIndex
+    const embeddingData = records.map((record, index) => ({
       id: record.payload.chunkId || record.messageId,
       docId: record.payload.clientId, // Use clientId as docId
-      chunkIndex: record.payload.metadata?.chunkIndex || 0,
+      chunkIndex: index, // Simple auto-increment for each record in the batch
       content: typeof record.payload.content === 'string' 
         ? record.payload.content 
         : JSON.stringify(record.payload.content),

@@ -1,7 +1,7 @@
 # --- deps (install with lockfile) ---
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package*.json ./
+COPY services/api/package*.json ./
 RUN npm ci
 
 # --- build (compile + prisma generate) ---
@@ -11,9 +11,9 @@ WORKDIR /app
 # Prisma engines need these on alpine during build
 RUN apk add --no-cache openssl libc6-compat
 
-COPY package*.json ./
-COPY tsconfig.json ./
-COPY src ./src
+COPY services/api/package*.json ./
+COPY services/api/tsconfig.json ./
+COPY services/api/src ./src
 COPY prisma/schema.prisma ./prisma/schema.prisma
 COPY prisma/migrations/20251016003025_init ./prisma/migrations/20251016003025_init
 

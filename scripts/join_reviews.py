@@ -49,8 +49,9 @@ def parse_date(review_time_str: str | None, unix_ts: int | None) -> str | None:
         return None
 
 def load_asin_meta(meta_path: Path, keep_fields=None, max_rows=None):
-    keep_fields = keep_fields or ["title","brand","main_cat","category","price","rank"]
+    keep_fields = keep_fields or ["title", "brand", "main_cat", "category"]
     asin_map = {}
+
     with open_maybe_gzip(meta_path, "rt") as f:
         for i, line in enumerate(f, 1):
             if not line.strip():
@@ -63,9 +64,7 @@ def load_asin_meta(meta_path: Path, keep_fields=None, max_rows=None):
             # keep only requested fields
             rec = {k: obj.get(k) for k in keep_fields if k in obj}
 
-            # sanitize a few common ones
-            if "price" in rec:
-                rec["price"] = parse_price(rec.get("price"))
+            # light cleanup
             if "category" in rec and isinstance(rec["category"], str):
                 rec["category"] = [rec["category"]]
 
@@ -100,41 +99,38 @@ def make_embed_text(prod, review):
     return text
 
 def process_reviews(reviews_path: Path, asin_map, out_path: Path, drop_if_missing_meta=True):
-    bad_asin = 0
-    n_in, n_out = 0, 0
+    n_in, n_out, bad_asin = 0, 0, 0
     with open_maybe_gzip(reviews_path, "rt") as fin, open(out_path, "w", encoding="utf-8") as fout:
         for line in fin:
-            if not line.strip(): continue
+            if not line.strip():
+                continue
             n_in += 1
             r = json.loads(line)
             asin = r.get("asin")
-            if not asin: 
+            if not asin:
                 continue
             prod = asin_map.get(asin)
             if not prod and drop_if_missing_meta:
                 bad_asin += 1
                 continue
-            prod = prod or {}
-            text = make_embed_text(prod, r)
+
+            text = make_embed_text(prod or {}, r)
+
             rec = {
                 "id": f"{asin}_{r.get('reviewerID','')}_{r.get('unixReviewTime','')}",
                 "asin": asin,
-                "embedding_text": text,     # <- send THIS to the embedding API
+                "embedding_text": text,
                 "meta": {
                     "product_title": prod.get("title"),
                     "brand": prod.get("brand"),
                     "main_cat": prod.get("main_cat"),
                     "categories": prod.get("category"),
-                    "price": prod.get("price"),
-                    "also_buy": prod.get("also_buy"),
-                    "also_view": prod.get("also_view"),
-                    "review_time": parse_date(r.get("reviewTime"), r.get("unixReviewTime")),
                     "rating": r.get("overall"),
                     "verified": r.get("verified"),
                     "review_summary": r.get("summary"),
-                    # keeping original review text separately is handy for UI
                     "review_text": r.get("reviewText"),
-                }
+                    "review_time": parse_date(r.get("reviewTime"), r.get("unixReviewTime")),
+                },
             }
             fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
             n_out += 1

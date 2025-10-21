@@ -21,8 +21,8 @@ export class InfraStack extends Stack {
 
     // ---------- Container Images ----------
     const apiImageAsset = new DockerImageAsset(this, "ApiImage", {
-      directory: path.join(__dirname, "../../services/api"), // points to the service folder
-      file: "Dockerfile",
+      directory: path.join(__dirname, "../.."), // points to the project root
+      file: "services/api/Dockerfile",
     });
 
     const helloImageAsset = new DockerImageAsset(this, "HelloImage", {
