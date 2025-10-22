@@ -1,7 +1,8 @@
 import * as path from 'path';
-import { Stack, StackProps, CfnOutput } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, SecretValue } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { Construct } from 'constructs';
 
@@ -56,6 +57,15 @@ export class InfraStack extends Stack {
     // ---------- SQS Queues ----------
     const sqsQueues = new SqsQueues(this, 'SqsQueues');
 
+    // ---------- OpenAI Secret ----------
+    let openaiSecret: secretsmanager.ISecret | undefined;
+    if (process.env.OPENAI_SECRET) {
+      openaiSecret = new secretsmanager.Secret(this, 'OpenAISecret', {
+        description: 'OpenAI API Key for embedding generation',
+        secretStringValue: SecretValue.unsafePlainText(process.env.OPENAI_SECRET),
+      });
+    }
+
     // ---------- Ingest Lambda ----------
     const ingestLambda = new IngestLambda(this, 'IngestLambda', {
       // ⛳️ Use project root so both lambda and prisma are accessible
@@ -66,7 +76,7 @@ export class InfraStack extends Stack {
       databaseSecret: database.secret,
       dbHost: database.proxy.endpoint,
       dbName: 'embeddings',
-      openaiApiKey: process.env.OPENAI_SECRET,
+      openaiSecret: openaiSecret,
     });
 
     // ---------- Hello Service (internal-only via Cloud Map) ----------
@@ -85,6 +95,7 @@ export class InfraStack extends Stack {
       helloServiceUrl: 'http://hello.local:3001',
       ingestQueueUrl: sqsQueues.ingestQueue.queueUrl,
       databaseSecret: database.secret,
+      openaiSecret: openaiSecret,
       dbHost: database.proxy.endpoint,
       dbName: 'embeddings',
     });

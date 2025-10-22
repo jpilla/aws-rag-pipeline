@@ -15,6 +15,7 @@ export interface ApiServiceProps {
   readonly ingestQueueUrl?: string;
 
   readonly databaseSecret: secretsmanager.ISecret;
+  readonly openaiSecret?: secretsmanager.ISecret;
   readonly dbHost: string;
   readonly dbName: string;
 }
@@ -32,6 +33,7 @@ export class ApiService extends Construct {
       helloServiceUrl,
       ingestQueueUrl,
       databaseSecret,
+      openaiSecret,
       dbHost,
       dbName,
     } = props;
@@ -65,6 +67,7 @@ export class ApiService extends Construct {
         secrets: {
           DB_USER: ecs.Secret.fromSecretsManager(databaseSecret, 'username'),
           DB_PASSWORD: ecs.Secret.fromSecretsManager(databaseSecret, 'password'),
+          ...(openaiSecret && { OPENAI_SECRET: ecs.Secret.fromSecretsManager(openaiSecret) }),
         },
       },
     });
@@ -83,6 +86,12 @@ export class ApiService extends Construct {
     // Give the ECS agent + task permission to read the DB secret
     databaseSecret.grantRead(this.service.taskDefinition.executionRole!);
     databaseSecret.grantRead(this.service.taskDefinition.taskRole);
+
+    // Give the ECS agent + task permission to read the OpenAI secret if provided
+    if (openaiSecret) {
+      openaiSecret.grantRead(this.service.taskDefinition.executionRole!);
+      openaiSecret.grantRead(this.service.taskDefinition.taskRole);
+    }
   }
 
   public getLoadBalancerDnsName(): string {

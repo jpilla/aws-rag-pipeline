@@ -12,8 +12,8 @@ model Embedding {
   docId       String?
   chunkIndex  Int
   content     String
-  // Postgres float8[] — Prisma supports Postgres scalar lists
-  embedding   Float[]  @db.DoublePrecision
+  // Use vector type from pgvector extension
+  embedding   Unsupported("vector")
   createdAt   DateTime @default(now())
 
   @@index([docId, chunkIndex], name: "idx_embeddings_doc_chunk")
