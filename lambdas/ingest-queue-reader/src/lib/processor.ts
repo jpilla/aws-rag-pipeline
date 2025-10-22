@@ -1,6 +1,7 @@
 import { logger } from "./logger.js";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { PrismaClient } from "@prisma/client";
+import OpenAI from "openai";
 
 export type Payload = {
   chunkId: string;
@@ -12,6 +13,7 @@ export type Payload = {
 };
 
 let prismaClient: PrismaClient | null = null;
+let openaiClient: OpenAI | null = null;
 
 async function getPrismaClient(): Promise<PrismaClient> {
   if (prismaClient) {
@@ -33,7 +35,7 @@ async function getPrismaClient(): Promise<PrismaClient> {
   }
 
   const credentials = JSON.parse(secretValue.SecretString);
-  
+
   // Construct DATABASE_URL like the API service does
   const host = process.env.DB_HOST || 'localhost';
   const port = process.env.DB_PORT || '5432';
@@ -53,6 +55,51 @@ async function getPrismaClient(): Promise<PrismaClient> {
   return prismaClient;
 }
 
+async function getOpenAIClient(): Promise<OpenAI> {
+  if (openaiClient) {
+    return openaiClient;
+  }
+
+  const secretsClient = new SecretsManagerClient({});
+  const secretArn = process.env.OPENAI_SECRET_ARN;
+
+  if (!secretArn) {
+    throw new Error("OPENAI_SECRET_ARN environment variable not set");
+  }
+
+  const command = new GetSecretValueCommand({ SecretId: secretArn });
+  const secretValue = await secretsClient.send(command);
+
+  if (!secretValue.SecretString) {
+    throw new Error("Failed to retrieve OpenAI API key");
+  }
+
+  const apiKey = secretValue.SecretString;
+
+  openaiClient = new OpenAI({
+    apiKey: apiKey,
+  });
+
+  logger.info("OpenAI client initialized");
+  return openaiClient;
+}
+
+async function generateEmbedding(content: string): Promise<number[]> {
+  const openai = await getOpenAIClient();
+
+  try {
+    const response = await openai.embeddings.create({
+      model: "text-embedding-3-small",
+      input: content,
+    });
+
+    return response.data[0].embedding;
+  } catch (error) {
+    logger.error({ error, content: content.substring(0, 100) }, "Failed to generate embedding");
+    throw error;
+  }
+}
+
 export type ProcessedRecord = {
   messageId: string;
   payload: Payload;
@@ -67,17 +114,29 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
   const results: ProcessedRecord[] = [];
   
   try {
-    // Transform all records into embedding data with auto-incremented chunkIndex
-    const embeddingData = records.map((record, index) => ({
-      id: record.payload.chunkId || record.messageId,
-      docId: record.payload.clientId, // Use clientId as docId
-      chunkIndex: index, // Simple auto-increment for each record in the batch
-      content: typeof record.payload.content === 'string' 
+    // Generate embeddings for all records in parallel
+    logger.info({ recordCount: records.length }, "Generating embeddings for batch");
+
+    const embeddingPromises = records.map(async (record, index) => {
+      const content = typeof record.payload.content === 'string'
         ? record.payload.content 
-        : JSON.stringify(record.payload.content),
-      embedding: record.payload.metadata?.embedding || [], // Extract embedding from metadata if present
-    }));
-    
+        : JSON.stringify(record.payload.content);
+
+      // Generate embedding using OpenAI
+      const embedding = await generateEmbedding(content);
+
+      return {
+        id: record.payload.chunkId || record.messageId,
+        docId: record.payload.clientId, // Use clientId as docId
+        chunkIndex: index, // Simple auto-increment for each record in the batch
+        content: content,
+        embedding: embedding,
+      };
+    });
+
+    // Wait for all embeddings to be generated
+    const embeddingData = await Promise.all(embeddingPromises);
+
     // Log all record fields before database insert
     logger.info({ 
       recordCount: embeddingData.length,

@@ -66,6 +66,7 @@ export class InfraStack extends Stack {
       databaseSecret: database.secret,
       dbHost: database.proxy.endpoint,
       dbName: 'embeddings',
+      openaiApiKey: process.env.OPENAI_SECRET,
     });
 
     // ---------- Hello Service (internal-only via Cloud Map) ----------

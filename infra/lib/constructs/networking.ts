@@ -15,8 +15,6 @@ export class Networking extends Construct {
   constructor(scope: Construct, id: string, props: NetworkingProps = {}) {
     super(scope, id);
 
-    const { maxAzs = 2, natGateways = 0 } = props;
-
     // Create VPC with public and isolated subnets
     this.vpc = new ec2.Vpc(this, 'AppVpc', {
       maxAzs: 2,
