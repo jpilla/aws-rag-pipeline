@@ -15,7 +15,7 @@ export interface IngestLambdaProps {
   readonly databaseSecret: secretsmanager.ISecret;
   readonly dbHost: string;
   readonly dbName: string;
-  readonly openaiApiKey?: string;
+  readonly openaiSecret?: secretsmanager.ISecret;
 }
 
 export class IngestLambda extends Construct {
@@ -24,16 +24,7 @@ export class IngestLambda extends Construct {
   constructor(scope: Construct, id: string, props: IngestLambdaProps) {
     super(scope, id);
 
-    const { lambdaCodePath, ingestQueue, vpc, securityGroup, databaseSecret, dbHost, dbName, openaiApiKey } = props;
-
-    // Create OpenAI secret from environment variable if provided
-    let openaiSecret: secretsmanager.ISecret | undefined;
-    if (openaiApiKey) {
-      openaiSecret = new secretsmanager.Secret(this, 'OpenAISecret', {
-        description: 'OpenAI API Key for embedding generation',
-        secretStringValue: SecretValue.unsafePlainText(openaiApiKey),
-      });
-    }
+    const { lambdaCodePath, ingestQueue, vpc, securityGroup, databaseSecret, dbHost, dbName, openaiSecret } = props;
 
     this.function = new lambda.DockerImageFunction(this, 'IngestConsumerFn', {
       code: lambda.DockerImageCode.fromImageAsset(lambdaCodePath, {

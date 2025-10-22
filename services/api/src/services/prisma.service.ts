@@ -106,34 +106,29 @@ export class PrismaService {
   async createEmbeddings(embeddings: any[]): Promise<{ success: boolean; count: number; ids: string[]; error?: string }> {
     try {
       const client = await this.getClient();
-      // Prepare data for Prisma upsert operations
-      const upsertPromises = embeddings.map(embedding =>
-        client.embedding.upsert({
-          where: { id: embedding.id },
-          update: {
-            docId: embedding.docId || null,
-            chunkIndex: embedding.chunkIndex,
-            content: embedding.content,
-            embedding: embedding.embedding,
-          },
-          create: {
-            id: embedding.id,
-            docId: embedding.docId || null,
-            chunkIndex: embedding.chunkIndex,
-            content: embedding.content,
-            embedding: embedding.embedding,
-          },
-          select: { id: true }
-        })
-      );
 
-      // Execute all upserts in parallel
-      const results = await Promise.all(upsertPromises);
+      // Use raw SQL for vector operations since Prisma doesn't support vector type
+      const insertPromises = embeddings.map(embedding => {
+        const embeddingString = `[${embedding.embedding.join(',')}]`;
+        return client.$executeRaw`
+          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, embedding, "createdAt")
+          VALUES (${embedding.id}, ${embedding.docId || null}, ${embedding.chunkIndex}, ${embedding.content}, ${embeddingString}::vector, NOW())
+          ON CONFLICT (id)
+          DO UPDATE SET
+            "docId" = EXCLUDED."docId",
+            "chunkIndex" = EXCLUDED."chunkIndex",
+            content = EXCLUDED.content,
+            embedding = EXCLUDED.embedding
+        `;
+      });
+
+      // Execute all inserts in parallel
+      await Promise.all(insertPromises);
 
       return {
         success: true,
-        count: results.length,
-        ids: results.map(result => result.id)
+        count: embeddings.length,
+        ids: embeddings.map(emb => emb.id)
       };
     } catch (error: any) {
       console.error("Embeddings creation failed:", error);
@@ -153,26 +148,18 @@ export class PrismaService {
     try {
       const client = await this.getClient();
 
-      const embeddings = await client.embedding.findMany({
-        where: {
-          id: {
-            in: ids
-          }
-        },
-        select: {
-          id: true,
-          docId: true,
-          chunkIndex: true,
-          content: true,
-          embedding: true,
-          createdAt: true
-        }
-      });
+      // Use raw SQL since we can't use Prisma with vector type
+      // Cast embedding to text to avoid deserialization issues
+      const embeddings = await client.$queryRaw`
+        SELECT id, "docId", "chunkIndex", content, embedding::text as embedding, "createdAt"
+        FROM "Embedding"
+        WHERE id = ANY(${ids})
+      `;
 
       return {
         success: true,
-        embeddings,
-        count: embeddings.length
+        embeddings: embeddings as any[],
+        count: (embeddings as any[]).length
       };
     } catch (error: any) {
       console.error("Embeddings retrieval failed:", error);
@@ -181,6 +168,51 @@ export class PrismaService {
         embeddings: [],
         count: 0,
         error: error.message || "Failed to retrieve embeddings"
+      };
+    }
+  }
+
+  /**
+   * Find similar embeddings using vector similarity search with pgvector
+   */
+  async findSimilarEmbeddings(
+    queryEmbedding: number[],
+    limit: number = 5,
+    threshold: number = 0.7
+  ): Promise<{ success: boolean; embeddings: any[]; count: number; error?: string }> {
+    try {
+      const client = await this.getClient();
+
+      // Use raw SQL for vector similarity search with pgvector
+      // Convert the array to a string format that PostgreSQL can understand
+      const embeddingString = `[${queryEmbedding.join(',')}]`;
+
+      // Use cosine distance (<=>) which is better for similarity search
+      // Cosine distance ranges from 0 (identical) to 2 (opposite)
+      // Convert threshold to cosine distance: similarity = 1 - (distance/2)
+      const cosineThreshold = 2 - (threshold * 2); // Convert similarity to distance
+
+      const embeddings = await client.$queryRaw`
+        SELECT id, "docId", "chunkIndex", content,
+               (embedding <=> ${embeddingString}::vector) as distance
+        FROM "Embedding"
+        WHERE (embedding <=> ${embeddingString}::vector) < ${cosineThreshold}
+        ORDER BY embedding <=> ${embeddingString}::vector
+        LIMIT ${limit}
+      `;
+
+      return {
+        success: true,
+        embeddings: embeddings as any[],
+        count: (embeddings as any[]).length
+      };
+    } catch (error: any) {
+      console.error("Vector similarity search failed:", error);
+      return {
+        success: false,
+        embeddings: [],
+        count: 0,
+        error: error.message || "Failed to perform similarity search"
       };
     }
   }

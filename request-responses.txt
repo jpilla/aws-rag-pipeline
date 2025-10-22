@@ -243,3 +243,66 @@ Note: Unnecessary use of -X or --request, POST is already inferred.
     }
   ]
 }
+
+
+
+❯ node scripts/ingest_jsonl.js \
+  --file ~/Downloads/Amazon_Reviews_Short.jsonl \
+  --endpoint http://InfraS-ApiSe-CDIDTV454OWM-1685510846.eu-west-1.elb.amazonaws.com/v1/ingest \
+  --batch 50 \
+  --concurrency 8 \
+  --retries 1 \
+  --timeout-ms 60000 \
+  --max-chars 8000 \
+  --log-every 100
+
+
+
+
+
+
+❯ curl -X POST http://InfraS-ApiSe-CDIDTV454OWM-1685510846.eu-west-1.elb.amazonaws.com/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "what do you know about mini farm animals?",
+    "limit": 5,
+    "threshold": 0.7
+  }' | jq
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  2333  100  2233  100   100    627     28  0:00:03  0:00:03 --:--:--   656
+{
+  "query": "what do you know about mini farm animals?",
+  "answer": "Based on the provided context, the mini farm animals are a toy product manufactured by U.S. Toy. Customers have purchased them for various purposes such as using them as party favors at a birthday party. Reviews indicate that some customers found the mini farm animals to be \"super cute,\" while others were disappointed with the quality and mentioned finding similar items elsewhere for a lower price.",
+  "context": [
+    {
+      "id": "c_bb4be0f3-f793-4289-93b7-1d192c665268",
+      "docId": "B01HIXSU4O_ANYBW921YS9S7_1512259200",
+      "chunkIndex": 0,
+      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 1 stars (Verified Purchase) Review Summary: With a better paint job on them Full Review: Not at all what I expected. Found identical item in the dollar store. With a better paint job on them. There is no return on this item!",
+      "distance": 0.48845053968291785
+    },
+    {
+      "id": "c_b19f315f-4a1a-4100-8b05-d4b58c316fbb",
+      "docId": "B01HIXSU4O_ANYBW921YS9S7_1512259200",
+      "chunkIndex": 2,
+      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 1 stars (Verified Purchase) Review Summary: With a better paint job on them Full Review: Not at all what I expected. Found identical item in the dollar store. With a better paint job on them. There is no return on this item!",
+      "distance": 0.48855149609464
+    },
+    {
+      "id": "c_0e2eb87c-a469-453d-a94f-d6367e9f840f",
+      "docId": "B01HIXSU4O_A24WCALKWI4JB1_1509321600",
+      "chunkIndex": 3,
+      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 5 stars (Verified Purchase) Review Summary: Super cute! Full Review: I put these in clear soasp and gave out as party favors at my daughters birthday party. Super cute!!!",
+      "distance": 0.4973796010017252
+    },
+    {
+      "id": "c_27b5d17f-f57d-4013-9c9a-6b4baffdaae2",
+      "docId": "B01HIXSU4O_A24WCALKWI4JB1_1509321600",
+      "chunkIndex": 2,
+      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 5 stars (Verified Purchase) Review Summary: Super cute! Full Review: I put these in clear soasp and gave out as party favors at my daughters birthday party. Super cute!!!",
+      "distance": 0.4973796010017252
+    }
+  ],
+  "matches": 4
+}

@@ -51,7 +51,18 @@ async function getPrismaClient(): Promise<PrismaClient> {
     log: ['error', 'warn'],
   });
 
-  logger.info("Prisma client initialized");
+  // Test the connection
+  try {
+    await prismaClient.$queryRaw`SELECT 1`;
+    logger.info({ databaseUrl: databaseUrl.replace(/:[^:]*@/, ':***@') }, "Prisma client initialized and connected");
+  } catch (connectionError) {
+    logger.error({
+      error: connectionError,
+      databaseUrl: databaseUrl.replace(/:[^:]*@/, ':***@')
+    }, "Failed to connect to database");
+    throw new Error(`Database connection failed: ${connectionError}`);
+  }
+
   return prismaClient;
 }
 
@@ -152,13 +163,31 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
       }))
     }, "About to insert records into database");
     
-    // Use a transaction to insert all records at once
-    await prisma.$transaction(async (tx: any) => {
-      await tx.embedding.createMany({
-        data: embeddingData,
-        skipDuplicates: true, // Skip duplicates instead of failing
-      });
-    });
+    // Insert all records using raw SQL (required for vector operations)
+    for (const data of embeddingData) {
+      try {
+        const embeddingString = `[${data.embedding.join(',')}]`;
+        await prisma.$executeRaw`
+          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, embedding, "createdAt")
+          VALUES (${data.id}, ${data.docId}, ${data.chunkIndex}, ${data.content}, ${embeddingString}::vector, NOW())
+          ON CONFLICT (id)
+          DO UPDATE SET
+            "docId" = EXCLUDED."docId",
+            "chunkIndex" = EXCLUDED."chunkIndex",
+            content = EXCLUDED.content,
+            embedding = EXCLUDED.embedding
+        `;
+        logger.info({ id: data.id }, "Successfully inserted embedding");
+      } catch (insertError) {
+        logger.error({
+          id: data.id, 
+          error: insertError,
+          embeddingLength: data.embedding.length,
+          contentLength: data.content.length
+        }, "Failed to insert embedding");
+        throw insertError; // Re-throw to trigger the outer catch block
+      }
+    }
     
     // All records succeeded
     records.forEach(record => {
