@@ -29,6 +29,7 @@ fi
 # Create a new snapshot of the current schema for next time
 cp "${CUR_SCHEMA}" "${SNAP_DIR}/${TS}_${NAME}.prisma"
 
+
 # Generate client (no DB needed)
 npx prisma generate
 

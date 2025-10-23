@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL") // we'll construct this at runtime from Secrets Manager
+  url      = env("DATABASE_URL") // we’ll construct this at runtime from Secrets Manager
 }
 
 model Embedding {
