@@ -31,7 +31,7 @@ export class Database extends Construct {
     // 2️⃣ Create the RDS instance (or Aurora, same idea)
     this.instance = new rds.DatabaseInstance(this, 'DbInstance', {
       engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16_3,
+        version: rds.PostgresEngineVersion.VER_17_6,
       }),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
