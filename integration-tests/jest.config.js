@@ -7,4 +7,5 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   maxWorkers: 1,
   detectOpenHandles: false, // Changed from true to false to prevent open handle warnings
+  testMatch: ['**/*.test.ts', '**/*.spec.ts', '**/endpoint-tests.ts', '**/rag-integration-tests.ts'],
 };
