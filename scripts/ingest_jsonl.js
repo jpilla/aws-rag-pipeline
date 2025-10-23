@@ -8,7 +8,7 @@
  *
  * USAGE:
  *   node scripts/ingest_batch_jsonl.js \
- *     --file ~/Downloads/Amazon_Reviews_Short.jsonl \
+ *     --file Amazon_Reviews_Short.jsonl \
  *     --endpoint https://your-api.example.com/v1/ingest \
  *     --batch 100 \
  *     --concurrency 8 \

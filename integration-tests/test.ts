@@ -1,4 +1,8 @@
 import axios from 'axios';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Setting the base URL for axios makes it easier to make requests
 const api = axios.create({
@@ -57,5 +61,55 @@ describe('API Endpoints', () => {
       expect(response.status).toBe(200);
       expect(endTime - startTime).toBeLessThan(5000); // Should respond within 5 seconds
     });
+  });
+
+  describe('RAG Pipeline Integration', () => {
+    it('should ingest Amazon reviews data and return relevant results', async () => {
+      // 1. First, ingest the Amazon reviews data
+      console.log('Ingesting Amazon reviews data...');
+      try {
+        const { stdout, stderr } = await execAsync(
+          `node scripts/ingest_jsonl.js --file Amazon_Reviews_Short.jsonl --endpoint ${process.env.BASE_URL}/v1/ingest --batch 10 --concurrency 2`,
+          { cwd: '/Users/jpilla/Documents/express-api-docker' }
+        );
+        console.log('Ingestion stdout:', stdout);
+        if (stderr) console.log('Ingestion stderr:', stderr);
+      } catch (error) {
+        console.error('Ingestion failed:', error);
+        throw error;
+      }
+
+      // 2. Wait a bit for the data to be processed
+      console.log('Waiting for data processing...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // 3. Query the endpoint with a question about mini farm animals
+      console.log('Querying for mini farm animals...');
+      const queryResponse = await api.post('/v1/query', {
+        query: 'What do you know about mini farm animals?',
+        limit: 5,
+        threshold: 0.7
+      });
+
+      expect(queryResponse.status).toBe(200);
+      expect(queryResponse.data).toHaveProperty('query');
+      expect(queryResponse.data).toHaveProperty('answer');
+      expect(queryResponse.data).toHaveProperty('context');
+      expect(queryResponse.data).toHaveProperty('matches');
+
+      // 4. Assert that we got meaningful results (not the "didn't find helpful information" response)
+      expect(queryResponse.data.answer).not.toBe("I couldn't find any relevant information to answer your question.");
+      expect(queryResponse.data.matches).toBeGreaterThan(0);
+      expect(queryResponse.data.context.length).toBeGreaterThan(0);
+
+      // 5. Verify the context contains relevant information about mini farm animals
+      const contextText = queryResponse.data.context.map((chunk: any) => chunk.content).join(' ').toLowerCase();
+      expect(contextText).toContain('mini farm animals');
+
+      console.log('Query successful!');
+      console.log('Answer:', queryResponse.data.answer);
+      console.log('Matches found:', queryResponse.data.matches);
+      console.log('Context chunks:', queryResponse.data.context.length);
+    }, 60000); // 60 second timeout for this test
   });
 });
