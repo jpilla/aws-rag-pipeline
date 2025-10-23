@@ -2,6 +2,7 @@ import { logger } from "./logger.js";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
+import crypto from "crypto";
 
 export type Payload = {
   chunkId: string;
@@ -95,6 +96,10 @@ async function getOpenAIClient(): Promise<OpenAI> {
   return openaiClient;
 }
 
+function generateContentHash(content: string): string {
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
 async function generateEmbedding(content: string): Promise<number[]> {
   const openai = await getOpenAIClient();
 
@@ -133,6 +138,9 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         ? record.payload.content
         : JSON.stringify(record.payload.content);
 
+      // Generate content hash for idempotency
+      const contentHash = generateContentHash(content);
+
       // Generate embedding using OpenAI
       const embedding = await generateEmbedding(content);
 
@@ -141,6 +149,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         docId: record.payload.clientId, // Use clientId as docId
         chunkIndex: index, // Simple auto-increment for each record in the batch
         content: content,
+        contentHash: contentHash,
         embedding: embedding,
       };
     });
@@ -156,6 +165,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         id: data.id,
         docId: data.docId,
         chunkIndex: data.chunkIndex,
+        contentHash: data.contentHash,
         contentLength: data.content.length,
         embeddingLength: data.embedding.length,
         contentPreview: data.content.substring(0, 100) + (data.content.length > 100 ? '...' : ''),
@@ -163,7 +173,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
       }))
     }, "About to insert records into database");
 
-    // Insert all records using raw SQL (required for vector operations)
+    // Insert all records using raw SQL with idempotency via contentHash unique constraint
     for (const data of embeddingData) {
       // Format the embedding array as a PostgreSQL vector literal
       // pgvector expects format: [1,2,3] or [1.0,2.0,3.0]
@@ -183,6 +193,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
 
         logger.info({
           id: data.id,
+          contentHash: data.contentHash,
           embeddingString: embeddingString.substring(0, 100) + '...',
           embeddingLength: data.embedding.length,
           firstFewValues: data.embedding.slice(0, 5),
@@ -190,20 +201,15 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         }, "Inserting embedding with formatted string");
 
         await prisma.$executeRaw`
-          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, embedding, "createdAt", "updatedAt")
-          VALUES (${data.id}, ${data.docId}, ${data.chunkIndex}, ${data.content}, ${embeddingString}::vector, NOW(), NOW())
-          ON CONFLICT (id)
-          DO UPDATE SET
-            "docId" = EXCLUDED."docId",
-            "chunkIndex" = EXCLUDED."chunkIndex",
-            content = EXCLUDED.content,
-            embedding = EXCLUDED.embedding,
-            "updatedAt" = NOW()
+          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, "contentHash", embedding, "createdAt", "updatedAt")
+          VALUES (${data.id}, ${data.docId}, ${data.chunkIndex}, ${data.content}, ${data.contentHash}, ${embeddingString}::vector, NOW(), NOW())
+          ON CONFLICT ("contentHash") DO NOTHING
         `;
-        logger.info({ id: data.id }, "Successfully inserted embedding");
+        logger.info({ id: data.id, contentHash: data.contentHash }, "Successfully processed embedding (inserted or skipped due to existing content)");
       } catch (insertError) {
         logger.error({
           id: data.id,
+          contentHash: data.contentHash,
           error: insertError,
           embeddingLength: data.embedding.length,
           contentLength: data.content.length,
