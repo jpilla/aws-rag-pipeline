@@ -41,8 +41,8 @@ services:
 
   integration-tests:
     build:
-      context: ./integration-tests
-      dockerfile: ./Dockerfile.test
+      context: .
+      dockerfile: ./integration-tests/Dockerfile.test
     environment:
       BASE_URL: "http://api:${API_PORT:-3000}"
     depends_on:

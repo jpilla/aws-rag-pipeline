@@ -111,14 +111,15 @@ export class PrismaService {
       const insertPromises = embeddings.map(embedding => {
         const embeddingString = `[${embedding.embedding.join(',')}]`;
         return client.$executeRaw`
-          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, embedding, "createdAt")
-          VALUES (${embedding.id}, ${embedding.docId || null}, ${embedding.chunkIndex}, ${embedding.content}, ${embeddingString}::vector, NOW())
+          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, embedding, "createdAt", "updatedAt")
+          VALUES (${embedding.id}, ${embedding.docId || null}, ${embedding.chunkIndex}, ${embedding.content}, ${embeddingString}::vector, NOW(), NOW())
           ON CONFLICT (id)
           DO UPDATE SET
             "docId" = EXCLUDED."docId",
             "chunkIndex" = EXCLUDED."chunkIndex",
             content = EXCLUDED.content,
-            embedding = EXCLUDED.embedding
+            embedding = EXCLUDED.embedding,
+            "updatedAt" = NOW()
         `;
       });
 

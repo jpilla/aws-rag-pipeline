@@ -2,10 +2,11 @@ FROM node:23.4.0-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY integration-tests/package*.json ./
 
 RUN npm install
 
-COPY test.ts tsconfig.json jest.config.js jest.setup.js ./
+COPY integration-tests/endpoint-tests.ts integration-tests/rag-integration-tests.ts integration-tests/tsconfig.json integration-tests/jest.config.js integration-tests/jest.setup.js ./
+COPY Amazon_Reviews_Short.jsonl ./
 
 CMD ["npm", "test"]

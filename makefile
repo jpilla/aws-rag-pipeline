@@ -43,7 +43,8 @@ run-debug: build-api
 	docker-compose --profile debug up -d api-debug
 
 integration-tests:
-	@echo "🧪 Running integration tests against local service"
+	@echo "🧪 Building and running integration tests against local service"
+	docker-compose build integration-tests
 	docker-compose run --rm integration-tests
 
 destroy-local:
