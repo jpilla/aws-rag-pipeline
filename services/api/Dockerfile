@@ -15,9 +15,8 @@ COPY services/api/package*.json ./
 COPY services/api/tsconfig.json ./
 COPY services/api/src ./src
 COPY prisma/schema.prisma ./prisma/schema.prisma
-COPY prisma/migrations/20251016003025_init ./prisma/migrations/20251016003025_init
-COPY prisma/migrations/20250116000000_add_pgvector_extension ./prisma/migrations/20250116000000_add_pgvector_extension
-COPY prisma/migrations/20250116000001_convert_to_vector_type ./prisma/migrations/20250116000001_convert_to_vector_type
+COPY prisma/migrations/20251023153000_add_pgvector_extension ./prisma/migrations/20251023153000_add_pgvector_extension
+COPY prisma/migrations/20251023153344_init ./prisma/migrations/20251023153344_init
 
 # bring installed deps (incl. dev deps) from deps stage
 COPY --from=deps /app/node_modules ./node_modules
@@ -44,9 +43,8 @@ COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma/schema.prisma ./prisma/schema.prisma
-COPY --from=build /app/prisma/migrations/20251016003025_init ./prisma/migrations/20251016003025_init
-COPY --from=build /app/prisma/migrations/20250116000000_add_pgvector_extension ./prisma/migrations/20250116000000_add_pgvector_extension
-COPY --from=build /app/prisma/migrations/20250116000001_convert_to_vector_type ./prisma/migrations/20250116000001_convert_to_vector_type
+COPY --from=build /app/prisma/migrations/20251023153000_add_pgvector_extension ./prisma/migrations/20251023153000_add_pgvector_extension
+COPY --from=build /app/prisma/migrations/20251023153344_init ./prisma/migrations/20251023153344_init
 
 # Entry point: compose DATABASE_URL from ECS env, run migrations, start server
 RUN printf '%s\n' \
