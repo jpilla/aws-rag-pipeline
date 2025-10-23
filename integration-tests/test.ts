@@ -97,12 +97,14 @@ describe('API Endpoints', () => {
       expect(queryResponse.data).toHaveProperty('context');
       expect(queryResponse.data).toHaveProperty('matches');
 
-      // 4. Assert that we got meaningful results (not the "didn't find helpful information" response)
-      expect(queryResponse.data.answer).not.toBe("I couldn't find any relevant information to answer your question.");
+      // 4. Assert that we found embeddings and got a response (basic integration test)
       expect(queryResponse.data.matches).toBeGreaterThan(0);
       expect(queryResponse.data.context.length).toBeGreaterThan(0);
-
-      // 5. Verify the context contains relevant information about mini farm animals
+      
+      // 5. Check that we didn't get the "no information" response
+      expect(queryResponse.data.answer).not.toBe("I couldn't find any relevant information to answer your question.");
+      
+      // 6. Verify the context contains the expected keywords (proves ingestion worked)
       const contextText = queryResponse.data.context.map((chunk: any) => chunk.content).join(' ').toLowerCase();
       expect(contextText).toContain('mini farm animals');
 
