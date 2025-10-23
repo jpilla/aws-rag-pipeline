@@ -7,7 +7,7 @@
     "build": "tsc -p .",
     "start": "node dist/server.js",
     "prisma:make": "scripts/prisma-make.sh",
-    "prisma:generate": "cd ../../ && prisma generate"
+    "prisma:generate": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "3.901.0",

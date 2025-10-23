@@ -4,8 +4,9 @@ CREATE TABLE "Embedding" (
     "docId" TEXT,
     "chunkIndex" INTEGER NOT NULL,
     "content" TEXT NOT NULL,
-    "embedding" DOUBLE PRECISION[],
+    "embedding" vector NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Embedding_pkey" PRIMARY KEY ("id")
 );
