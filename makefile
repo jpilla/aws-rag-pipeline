@@ -1,6 +1,6 @@
 # ========== LOCAL DEVELOPMENT ==========
 
-.PHONY: help build-api build-local run-local run-debug integration-tests prisma-migrate
+.PHONY: help build-api build-local run-local run-debug integration-tests prisma-migrate local-db test-migration
 
 help:
 	@echo "Available targets:"
@@ -9,6 +9,8 @@ help:
 	@echo "  make run-debug          - Build and run the app in debug mode"
 	@echo "  make integration-tests  - Run integration tests"
 	@echo "  make prisma-migrate     - Create new Prisma migration (usage: make prisma-migrate migration_name)"
+	@echo "  make local-db           - Set up local development environment"
+	@echo "  make test-migration     - Test Prisma migrations (fast feedback)"
 
 # --- LOCAL DEV ---
 build-api:
@@ -25,6 +27,15 @@ prisma-migrate:
 	@echo "📝 Creating new Prisma migration"
 	# filter-out removes 'prisma-migrate' from arguments, passes the rest to script
 	./scripts/prisma-make.sh $(filter-out prisma-migrate,$(MAKECMDGOALS))
+
+# --- FAST DEVELOPMENT WORKFLOW ---
+local-db:
+	@echo "🚀 Setting up local development environment"
+	./scripts/dev.sh setup
+
+test-migration:
+	@echo "🧪 Testing Prisma migrations (fast feedback)"
+	./scripts/dev.sh test
 
 # Allow make to pass through arguments (prevents "no rule to make target" errors)
 %:
@@ -57,7 +68,7 @@ destroy-local:
 
 deploy-cloud-resources:
 	@echo "🚢 Deploying with CDK (CDK will handle ECR and image management)"
-	cd infra && npx cdk deploy --no-rollback
+	cd infra && npx cdk deploy
 
 cdk-diff:
 	@echo "🔍 Showing CDK diff"

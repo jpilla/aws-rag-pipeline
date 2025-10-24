@@ -83,7 +83,7 @@ export class ApiService extends Construct {
       healthyHttpCodes: '200',
       interval: Duration.seconds(10),
       timeout: Duration.seconds(3),
-      unhealthyThresholdCount: 1,
+      unhealthyThresholdCount: 2,
       healthyThresholdCount: 2,
     });
 

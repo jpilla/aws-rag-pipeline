@@ -1,4 +1,22 @@
 services:
+  # Local PostgreSQL database for development and testing
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-embeddings}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-embeddings}"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+      start_period: 10s
+
   hello:
     build:
       context: ./services/hello
@@ -52,3 +70,6 @@ services:
         condition: service_healthy
     profiles:
       - test
+
+volumes:
+  postgres_data:
