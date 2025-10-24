@@ -1,5 +1,4 @@
 import { Construct } from 'constructs';
-import * as cdk from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
@@ -51,7 +50,7 @@ export class ApiService extends Construct {
 
     this.service = new ecs_patterns.ApplicationLoadBalancedFargateService(this, 'ApiService', {
       cluster,
-      desiredCount: 1,
+      desiredCount: 2,
       cpu: 256,
       memoryLimitMiB: 512,
       publicLoadBalancer: true,
@@ -59,6 +58,11 @@ export class ApiService extends Construct {
       taskSubnets: { subnetGroupName: 'public' },
       assignPublicIp: true,
       securityGroups: [securityGroup],
+      healthCheckGracePeriod: Duration.seconds(10),
+      circuitBreaker: {
+        enable: true,
+        rollback: true
+      },
       taskImageOptions: {
         image,
         containerPort: 3000,
@@ -72,14 +76,14 @@ export class ApiService extends Construct {
       },
     });
 
-    // Health check
+    // Make health checks much more aggressive for faster failure detection
     this.service.targetGroup.configureHealthCheck({
       path: '/healthz',
       port: '3000',
       healthyHttpCodes: '200',
-      interval: Duration.seconds(30),
-      timeout: Duration.seconds(5),
-      unhealthyThresholdCount: 2,
+      interval: Duration.seconds(10),
+      timeout: Duration.seconds(3),
+      unhealthyThresholdCount: 1,
       healthyThresholdCount: 2,
     });
 

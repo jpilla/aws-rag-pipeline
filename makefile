@@ -24,7 +24,7 @@ build-api:
 prisma-migrate:
 	@echo "📝 Creating new Prisma migration"
 	# filter-out removes 'prisma-migrate' from arguments, passes the rest to script
-	cd services/api && ./scripts/prisma-make.sh $(filter-out prisma-migrate,$(MAKECMDGOALS))
+	./scripts/prisma-make.sh $(filter-out prisma-migrate,$(MAKECMDGOALS))
 
 # Allow make to pass through arguments (prevents "no rule to make target" errors)
 %:
