@@ -17,7 +17,10 @@ export class IngestService {
 
   constructor(queueUrl: string, region: string = "us-east-1") {
     this.queueUrl = queueUrl;
-    this.sqsClient = new SQSClient({ region });
+    this.sqsClient = new SQSClient({
+      region,
+      maxAttempts: 3,
+    });
   }
 
   /**
@@ -42,14 +45,28 @@ export class IngestService {
   }
 
   /**
+   * Generates a content hash for deduplication
+   */
+  private generateContentHash(content: string): string {
+    return crypto.createHash('sha256').update(content).digest('hex');
+  }
+
+  /**
    * Transforms a single record into a queue message
    */
   private createQueueMessage(
     record: IngestRecord,
     batchId: string
   ): QueueMessage {
+    const content = typeof record.content === 'string'
+      ? record.content
+      : JSON.stringify(record.content);
+
+    // Use contentHash as chunkId for consistent deduplication when chunkId not provided
+    const chunkId = record.chunkId ?? this.generateContentHash(content);
+
     return {
-      chunkId: record.chunkId ?? this.generateChunkId(),
+      chunkId,
       clientId: record.clientId,
       content: record.content,
       metadata: record.metadata ?? {},
@@ -140,7 +157,7 @@ export class IngestService {
   }
 
   /**
-   * Processes records in batches of 10 (SQS batch limit)
+   * Processes records in batches of 10 (SQS batch limit) with parallel execution
    */
   async processRecords(
     records: IngestRecord[],
@@ -153,14 +170,23 @@ export class IngestService {
     const allResults: IngestResult[] = [];
     const allErrors: IngestError[] = [];
 
+    // Create all batch entries upfront
+    const batchEntries: QueueEntry[][] = [];
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const slice = records.slice(i, i + BATCH_SIZE);
       const entries = this.createBatchEntries(slice, batchId, i);
-      const { results, errors } = await this.sendBatch(entries);
+      batchEntries.push(entries);
+    }
 
+    // Process all batches in parallel
+    const batchPromises = batchEntries.map(entries => this.sendBatch(entries));
+    const batchResults = await Promise.all(batchPromises);
+
+    // Combine all results
+    batchResults.forEach(({ results, errors }) => {
       allResults.push(...results);
       allErrors.push(...errors);
-    }
+    });
 
     return { results: allResults, errors: allErrors };
   }
@@ -173,10 +199,16 @@ export class IngestService {
     results: IngestResult[];
     errors: IngestError[];
   }> {
+    const startTime = Date.now();
     const batchId = this.generateBatchId();
+
+    console.log(`Starting ingest for batch ${batchId} with ${records.length} records`);
+
     const { results, errors } = await this.processRecords(records, batchId);
+
+    const duration = Date.now() - startTime;
+    console.log(`Completed ingest for batch ${batchId} in ${duration}ms - ${results.length} successful, ${errors.length} failed`);
 
     return { batchId, results, errors };
   }
 }
-

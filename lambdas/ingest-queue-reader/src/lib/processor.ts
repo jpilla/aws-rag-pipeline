@@ -96,22 +96,19 @@ async function getOpenAIClient(): Promise<OpenAI> {
   return openaiClient;
 }
 
-function generateContentHash(content: string): string {
-  return crypto.createHash('sha256').update(content).digest('hex');
-}
 
-async function generateEmbedding(content: string): Promise<number[]> {
+async function generateEmbeddings(contents: string[]): Promise<number[][]> {
   const openai = await getOpenAIClient();
 
   try {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: content,
+      input: contents,
     });
 
-    return response.data[0].embedding;
+    return response.data.map(item => item.embedding);
   } catch (error) {
-    logger.error({ error, content: content.substring(0, 100) }, "Failed to generate embedding");
+    logger.error({ error, contentCount: contents.length }, "Failed to generate embeddings batch");
     throw error;
   }
 }
@@ -130,119 +127,222 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
   const results: ProcessedRecord[] = [];
 
   try {
-    // Generate embeddings for all records in parallel
-    logger.info({ recordCount: records.length }, "Generating embeddings for batch");
-
-    const embeddingPromises = records.map(async (record, index) => {
+    // Pre-process all records (chunkId already computed by API)
+    const processedRecords = records.map(record => {
       const content = typeof record.payload.content === 'string'
         ? record.payload.content
         : JSON.stringify(record.payload.content);
-
-      // Generate content hash for idempotency
-      const contentHash = generateContentHash(content);
-
-      // Generate embedding using OpenAI
-      const embedding = await generateEmbedding(content);
+      // chunkId is already computed by the API service
+      const chunkId = record.payload.chunkId;
 
       return {
-        id: record.payload.chunkId || record.messageId,
-        docId: record.payload.clientId, // Use clientId as docId
-        chunkIndex: index, // Simple auto-increment for each record in the batch
-        content: content,
-        contentHash: contentHash,
-        embedding: embedding,
+        ...record,
+        processedContent: content,
+        chunkId
       };
     });
 
-    // Wait for all embeddings to be generated
-    const embeddingData = await Promise.all(embeddingPromises);
+    // Phase 1: Insert all records with ENQUEUED status (idempotent via contentHash)
+    logger.info({ recordCount: records.length }, "Phase 1: Inserting records with ENQUEUED status");
 
-    // Log all record fields before database insert
+    // Prepare batch insert data
+    const insertData = processedRecords.map(record => ({
+      chunkId: record.chunkId,
+      clientId: record.payload.clientId,
+      content: record.processedContent,
+      originalRecord: record
+    }));
+
+    // Batch insert using Prisma's createMany equivalent with raw SQL
+    try {
+      // Use unnest for efficient batch insert
+      const chunkIds = insertData.map(d => d.chunkId);
+      const clientIds = insertData.map(d => d.clientId);
+      const chunkIndexes = insertData.map(() => 0);
+      const contents = insertData.map(d => d.content);
+
+      await prisma.$executeRaw`
+        INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, status, "createdAt", "updatedAt")
+        SELECT
+          unnest(${chunkIds}::text[]) as id,
+          unnest(${clientIds}::text[]) as "docId",
+          unnest(${chunkIndexes}::int[]) as "chunkIndex",
+          unnest(${contents}::text[]) as content,
+          'ENQUEUED' as status,
+          NOW() as "createdAt",
+          NOW() as "updatedAt"
+        ON CONFLICT (id) DO NOTHING
+      `;
+
+      logger.info({ recordCount: insertData.length }, "Batch inserted records with ENQUEUED status");
+    } catch (dbError) {
+      logger.error({ error: dbError, recordCount: insertData.length }, "Failed to batch insert records");
+      // Continue processing - individual records might still exist
+    }
+
+    // Phase 2: Check which records need processing
+    const chunkIds = processedRecords.map(record => record.chunkId);
+
+    logger.info({ chunkIds }, "Phase 2: Checking which records need processing");
+
+    const existingRecords = await prisma.$queryRaw<Array<{ id: string; status: string }>>`
+      SELECT id, status FROM "Embedding"
+      WHERE id = ANY(${chunkIds})
+    `;
+
+    const alreadyIngestedIds = new Set(
+      existingRecords
+        .filter((record: { id: string; status: string }) => record.status === 'INGESTED')
+        .map((record: { id: string; status: string }) => record.id)
+    );
+
+    const recordsToProcess = processedRecords.filter(record =>
+      !alreadyIngestedIds.has(record.chunkId)
+    );
+
     logger.info({
-      recordCount: embeddingData.length,
-      records: embeddingData.map((data, index) => ({
-        index,
-        id: data.id,
-        docId: data.docId,
-        chunkIndex: data.chunkIndex,
-        contentHash: data.contentHash,
-        contentLength: data.content.length,
-        embeddingLength: data.embedding.length,
-        contentPreview: data.content.substring(0, 100) + (data.content.length > 100 ? '...' : ''),
-        embeddingPreview: data.embedding.slice(0, 5) // Show first 5 embedding values
-      }))
-    }, "About to insert records into database");
+      totalRecords: records.length,
+      alreadyIngested: alreadyIngestedIds.size,
+      needProcessing: recordsToProcess.length
+    }, "Processing status analysis");
 
-    // Insert all records using raw SQL with idempotency via contentHash unique constraint
-    for (const data of embeddingData) {
-      // Format the embedding array as a PostgreSQL vector literal
-      // pgvector expects format: [1,2,3] or [1.0,2.0,3.0]
-      const embeddingString = `[${data.embedding.join(',')}]`;
+    // Short circuit if all already ingested
+    if (recordsToProcess.length === 0) {
+      logger.info({ recordCount: records.length }, "All chunks already ingested, skipping OpenAI processing");
 
+      processedRecords.forEach(record => {
+        results.push({
+          messageId: record.messageId,
+          payload: record.payload,
+          success: true,
+        });
+      });
+
+      return results;
+    }
+
+    // Phase 3: Process remaining records with OpenAI (batched)
+    logger.info({
+      recordsToProcess: recordsToProcess.length,
+      skippedRecords: records.length - recordsToProcess.length
+    }, "Phase 3: Processing remaining records with OpenAI (batched)");
+
+    if (recordsToProcess.length > 0) {
       try {
-        // Validate embedding data before insertion
-        if (!data.embedding || !Array.isArray(data.embedding) || data.embedding.length === 0) {
-          throw new Error(`Invalid embedding data: ${JSON.stringify(data.embedding)}`);
+        // Prepare all contents for batch embedding generation
+        const contents = recordsToProcess.map(record => record.processedContent);
+
+        logger.info({ contentCount: contents.length }, "Generating embeddings batch");
+        const embeddings = await generateEmbeddings(contents);
+
+        // Validate embeddings batch
+        if (!embeddings || embeddings.length !== contents.length) {
+          throw new Error(`Embedding batch size mismatch: expected ${contents.length}, got ${embeddings?.length || 0}`);
         }
 
-        // Check for NaN or invalid values in embedding
-        const hasInvalidValues = data.embedding.some(val => !Number.isFinite(val));
-        if (hasInvalidValues) {
-          throw new Error(`Embedding contains invalid values: ${data.embedding.slice(0, 10)}`);
+        // Validate all embeddings first
+        for (let i = 0; i < embeddings.length; i++) {
+          const embedding = embeddings[i];
+          const chunkId = recordsToProcess[i].chunkId;
+
+          if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
+            throw new Error(`Invalid embedding data for chunk ${chunkId}: ${JSON.stringify(embedding)}`);
+          }
+
+          const hasInvalidValues = embedding.some(val => !Number.isFinite(val));
+          if (hasInvalidValues) {
+            throw new Error(`Embedding contains invalid values for chunk ${chunkId}: ${embedding.slice(0, 10)}`);
+          }
         }
 
-        logger.info({
-          id: data.id,
-          contentHash: data.contentHash,
-          embeddingString: embeddingString.substring(0, 100) + '...',
-          embeddingLength: data.embedding.length,
-          firstFewValues: data.embedding.slice(0, 5),
-          lastFewValues: data.embedding.slice(-5)
-        }, "Inserting embedding with formatted string");
+        // Batch update all records to INGESTED status using UPDATE FROM
+        const chunkIds = recordsToProcess.map(record => record.chunkId);
+        const embeddingStrings = embeddings.map(embedding => `[${embedding.join(',')}]`);
 
         await prisma.$executeRaw`
-          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, "contentHash", embedding, "createdAt", "updatedAt")
-          VALUES (${data.id}, ${data.docId}, ${data.chunkIndex}, ${data.content}, ${data.contentHash}, ${embeddingString}::vector, NOW(), NOW())
-          ON CONFLICT ("contentHash") DO NOTHING
+          UPDATE "Embedding"
+          SET embedding = updates.embedding,
+              status = 'INGESTED',
+              "updatedAt" = NOW()
+          FROM (
+            SELECT
+              unnest(${chunkIds}::text[]) as id,
+              unnest(${embeddingStrings}::vector[]) as embedding
+          ) AS updates
+          WHERE "Embedding".id = updates.id
         `;
-        logger.info({ id: data.id, contentHash: data.contentHash }, "Successfully processed embedding (inserted or skipped due to existing content)");
-      } catch (insertError) {
-        logger.error({
-          id: data.id,
-          contentHash: data.contentHash,
-          error: insertError,
-          embeddingLength: data.embedding.length,
-          contentLength: data.content.length,
-          embeddingString: embeddingString.substring(0, 100) + '...'
-        }, "Failed to insert embedding");
-        throw insertError; // Re-throw to trigger the outer catch block
+
+        logger.info({ updatedCount: chunkIds.length }, "Batch updated records to INGESTED status");
+
+        // Add successful results
+        const updateResults = recordsToProcess.map(record => ({
+          messageId: record.messageId,
+          payload: record.payload,
+          success: true,
+        }));
+
+        results.push(...updateResults);
+
+        logger.info({
+          processedCount: updateResults.length,
+          successCount: updateResults.filter(r => r.success).length
+        }, "Batch embedding processing completed");
+
+      } catch (openaiError) {
+        logger.error({ error: openaiError, recordCount: recordsToProcess.length }, "OpenAI batch processing failed - marking all as FAILED");
+
+        // Batch update all records to FAILED status
+        const chunkIds = recordsToProcess.map(record => record.chunkId);
+
+        await prisma.$executeRaw`
+          UPDATE "Embedding"
+          SET status = 'FAILED', "updatedAt" = NOW()
+          WHERE id = ANY(${chunkIds})
+        `;
+
+        logger.info({ failedCount: chunkIds.length }, "Batch updated records to FAILED status");
+
+        // Add failed results
+        const failedResults = recordsToProcess.map(record => ({
+          messageId: record.messageId,
+          payload: record.payload,
+          success: false,
+          error: openaiError instanceof Error ? openaiError.message : 'OpenAI batch processing failed',
+        }));
+
+        results.push(...failedResults);
       }
     }
 
-    // All records succeeded
-    records.forEach(record => {
-      results.push({
-        messageId: record.messageId,
-        payload: record.payload,
-        success: true,
-      });
+    // Add already ingested records as successful
+    processedRecords.forEach(record => {
+      if (alreadyIngestedIds.has(record.chunkId)) {
+        results.push({
+          messageId: record.messageId,
+          payload: record.payload,
+          success: true,
+        });
+      }
     });
 
     logger.info({
       recordCount: records.length,
-      successCount: results.length
-    }, "Successfully processed batch");
+      successCount: results.length,
+      alreadyIngested: alreadyIngestedIds.size,
+      newlyProcessed: results.filter(r => r.success).length - alreadyIngestedIds.size,
+      failed: results.filter(r => !r.success).length
+    }, "Batch processing completed");
 
   } catch (error) {
-    logger.error({ error, recordCount: records.length }, "Batch processing failed - marking all records as failed");
+    logger.error({ error, recordCount: records.length }, "Critical batch processing failure - marking all records as failed");
 
-    // If the transaction fails, mark all records as failed
+    // If critical failure (database connection, etc.), mark all records as failed
     records.forEach(record => {
       results.push({
         messageId: record.messageId,
         payload: record.payload,
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : 'Critical processing failure',
       });
     });
   }

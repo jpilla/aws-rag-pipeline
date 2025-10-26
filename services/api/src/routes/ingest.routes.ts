@@ -25,6 +25,8 @@ function getIngestService(): IngestService {
  * Ingests records into the SQS queue for processing
  */
 router.post("/v1/ingest", async (req: Request, res: Response) => {
+  const requestStartTime = Date.now();
+
   // Validate environment configuration
   if (!QUEUE_URL) {
     return res.status(500).json({ error: "INGEST_QUEUE_URL not set" });
@@ -39,6 +41,8 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
   }
 
   try {
+    console.log(`Processing ingest request with ${records.length} records`);
+
     // Process the records
     const { batchId, results, errors } = await service.ingest(records);
 
@@ -60,8 +64,14 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
       errors,
     };
 
+    const totalDuration = Date.now() - requestStartTime;
+    console.log(`Ingest API completed in ${totalDuration}ms for batch ${batchId}`);
+
     res.status(status).json(response);
   } catch (error: any) {
+    const totalDuration = Date.now() - requestStartTime;
+    console.error(`Ingest API failed after ${totalDuration}ms:`, error);
+
     res.status(500).json({
       error: "Internal server error",
       message: error.message ?? String(error),
@@ -70,4 +80,3 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
 });
 
 export default router;
-
