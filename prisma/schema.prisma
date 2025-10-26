@@ -12,12 +12,10 @@ model Embedding {
   docId       String?
   chunkIndex  Int
   content     String
-  contentHash String   // SHA-256 hash of content for idempotency
-  // Use vector type from pgvector extension
-  embedding   Unsupported("vector")
+  contentHash String
+  embedding   Unsupported("vector(1536)")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([docId, chunkIndex], name: "idx_embeddings_doc_chunk")
   @@unique([contentHash], name: "idx_embeddings_content_hash")
 }

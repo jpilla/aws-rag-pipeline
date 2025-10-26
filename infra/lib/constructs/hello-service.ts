@@ -1,7 +1,7 @@
 import { Construct } from 'constructs';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
+import { Duration } from 'aws-cdk-lib';
 
 export interface HelloServiceProps {
   readonly cluster: ecs.Cluster;
@@ -41,11 +41,18 @@ export class HelloService extends Construct {
     this.service = new ecs.FargateService(this, 'HelloService', {
       cluster,
       taskDefinition: this.taskDefinition,
-      desiredCount: 1,
+      desiredCount: 2,
       securityGroups: [securityGroup],
       assignPublicIp: true, // IMPORTANT (no NAT/endpoints yet)
       vpcSubnets: { subnetGroupName: 'public' }, // place ENIs in public subnets
       cloudMapOptions,
+      // Add health check grace period for consistency
+      healthCheckGracePeriod: Duration.seconds(30),
+      // Enable deployment circuit breaker for faster failure detection
+      circuitBreaker: {
+        enable: true,
+        rollback: true
+      },
     });
   }
 

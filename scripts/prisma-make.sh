@@ -3,9 +3,9 @@ set -euo pipefail
 
 NAME="${1:-migration}"
 TS="$(date +%Y%m%d%H%M%S)"
-MIG_DIR="../../prisma/migrations/${TS}_${NAME}"
-SNAP_DIR="../../prisma/snapshots"
-CUR_SCHEMA="../../prisma/schema.prisma"
+MIG_DIR="prisma/migrations/${TS}_${NAME}"
+SNAP_DIR="prisma/snapshots"
+CUR_SCHEMA="prisma/schema.prisma"
 
 mkdir -p "$MIG_DIR" "$SNAP_DIR"
 
@@ -28,7 +28,6 @@ fi
 
 # Create a new snapshot of the current schema for next time
 cp "${CUR_SCHEMA}" "${SNAP_DIR}/${TS}_${NAME}.prisma"
-
 
 # Generate client (no DB needed)
 npx prisma generate
