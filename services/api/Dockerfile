@@ -63,7 +63,7 @@ RUN printf '%s\n' \
     'echo "[entrypoint] Running Prisma migrations…"' \
     'i=1' \
     'until npx prisma migrate deploy; do' \
-    '  if [ "$i" -ge 10 ]; then echo "[entrypoint] prisma migrate failed after $i attempts"; exit 1; fi' \
+    '  if [ "$i" -ge 3 ]; then echo "[entrypoint] prisma migrate failed after $i attempts"; exit 1; fi' \
     '  echo "[entrypoint] retry $i…"; i=$((i+1)); sleep 3;' \
     'done' \
     'echo "[entrypoint] Migrations complete. Starting API…"' \
