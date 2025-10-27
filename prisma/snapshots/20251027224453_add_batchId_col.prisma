@@ -15,14 +15,14 @@ enum ProcessingStatus {
 
 model Embedding {
   id          String           @id
+  batchId     String?
   docId       String?
   chunkIndex  Int
   content     String
-  contentHash String
-  embedding   Unsupported("vector(1536)")
+  embedding   Unsupported("vector(1536)")?
   status      ProcessingStatus @default(INGESTED)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  @@unique([contentHash], name: "idx_embeddings_content_hash")
+  @@index([batchId, chunkIndex])
 }

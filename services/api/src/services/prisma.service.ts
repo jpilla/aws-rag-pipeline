@@ -219,6 +219,102 @@ export class PrismaService {
   }
 
   /**
+   * Get embeddings by batchId with status information
+   */
+  async getEmbeddingsByBatchId(batchId: string): Promise<{
+    success: boolean;
+    embeddings: any[];
+    count: number;
+    error?: string
+  }> {
+    try {
+      const client = await this.getClient();
+
+      const embeddings = await client.$queryRaw`
+        SELECT id, "batchId", "docId", "chunkIndex", content,
+               CASE
+                 WHEN embedding IS NOT NULL THEN 'INGESTED'
+                 WHEN status = 'FAILED' THEN 'FAILED'
+                 ELSE 'ENQUEUED'
+               END as status,
+               "createdAt", "updatedAt"
+        FROM "Embedding"
+        WHERE "batchId" = ${batchId}
+        ORDER BY "chunkIndex"
+      `;
+
+      return {
+        success: true,
+        embeddings: embeddings as any[],
+        count: (embeddings as any[]).length
+      };
+    } catch (error: any) {
+      console.error("Batch embeddings retrieval failed:", error);
+      return {
+        success: false,
+        embeddings: [],
+        count: 0,
+        error: error.message || "Failed to retrieve batch embeddings"
+      };
+    }
+  }
+
+  /**
+   * Get batch status summary
+   */
+  async getBatchStatus(batchId: string): Promise<{
+    success: boolean;
+    batchId: string;
+    totalChunks: number;
+    enqueuedChunks: number;
+    ingestedChunks: number;
+    failedChunks: number;
+    createdAt?: string;
+    completedAt?: string;
+    error?: string
+  }> {
+    try {
+      const client = await this.getClient();
+
+      const result = await client.$queryRaw`
+        SELECT
+          COUNT(*) as total_chunks,
+          COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END) as ingested_chunks,
+          COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed_chunks,
+          COUNT(CASE WHEN embedding IS NULL AND status != 'FAILED' THEN 1 END) as enqueued_chunks,
+          MIN("createdAt") as created_at,
+          MAX(CASE WHEN embedding IS NOT NULL OR status = 'FAILED' THEN "updatedAt" END) as completed_at
+        FROM "Embedding"
+        WHERE "batchId" = ${batchId}
+      `;
+
+      const stats = (result as any[])[0];
+
+      return {
+        success: true,
+        batchId,
+        totalChunks: parseInt(stats.total_chunks),
+        enqueuedChunks: parseInt(stats.enqueued_chunks),
+        ingestedChunks: parseInt(stats.ingested_chunks),
+        failedChunks: parseInt(stats.failed_chunks),
+        createdAt: stats.created_at,
+        completedAt: stats.completed_at
+      };
+    } catch (error: any) {
+      console.error("Batch status retrieval failed:", error);
+      return {
+        success: false,
+        batchId,
+        totalChunks: 0,
+        enqueuedChunks: 0,
+        ingestedChunks: 0,
+        failedChunks: 0,
+        error: error.message || "Failed to retrieve batch status"
+      };
+    }
+  }
+
+  /**
    * Close the Prisma client
    */
   async close(): Promise<void> {

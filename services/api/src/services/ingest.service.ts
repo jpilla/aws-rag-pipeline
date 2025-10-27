@@ -52,6 +52,45 @@ export class IngestService {
   }
 
   /**
+   * Sanitizes error codes to avoid exposing infrastructure details
+   */
+  private sanitizeErrorCode(rawCode: string): string {
+    // Map AWS SQS error codes to generic ones
+    const codeMap: Record<string, string> = {
+      'InvalidParameterValue': 'INVALID_PARAMETER',
+      'MessageTooLarge': 'MESSAGE_TOO_LARGE',
+      'BatchEntryIdsNotDistinct': 'DUPLICATE_ENTRY',
+      'TooManyEntriesInBatchRequest': 'BATCH_TOO_LARGE',
+      'EmptyBatchRequest': 'EMPTY_BATCH',
+      'InvalidBatchEntryId': 'INVALID_ENTRY_ID',
+      'UnsupportedOperation': 'UNSUPPORTED_OPERATION',
+    };
+
+    return codeMap[rawCode] || 'PROCESSING_ERROR';
+  }
+
+  /**
+   * Sanitizes error messages to avoid exposing sensitive information
+   */
+  private sanitizeErrorMessage(rawMessage: string): string {
+    // Remove potential sensitive information
+    let sanitized = rawMessage
+      .replace(/https?:\/\/[^\s]+/g, '[URL]') // Remove URLs
+      .replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, '[UUID]') // Remove UUIDs
+      .replace(/\/[^\s]*\.(js|ts|json|sql|py|go|java|cpp|c|h)/gi, '[FILE]') // Remove file paths
+      .replace(/at\s+[^\s]+\s+\([^)]+\)/g, '[STACK_TRACE]') // Remove stack traces
+      .replace(/Error:\s*/gi, '') // Remove "Error:" prefix
+      .trim();
+
+    // Truncate very long messages
+    if (sanitized.length > 200) {
+      sanitized = sanitized.substring(0, 197) + '...';
+    }
+
+    return sanitized || 'An error occurred during processing';
+  }
+
+  /**
    * Transforms a single record into a queue message
    */
   private createQueueMessage(
@@ -122,7 +161,7 @@ export class IngestService {
           clientId: entry._meta.clientId,
           originalIndex: entry._meta.idx,
           chunkId: entry._meta.chunkId,
-          messageId: success.MessageId!,
+          messageId: success.MessageId!, // Keep for now - may be useful for debugging
           status: "enqueued",
         });
       });
@@ -135,8 +174,8 @@ export class IngestService {
           originalIndex: entry._meta.idx,
           chunkId: entry._meta.chunkId,
           status: "rejected",
-          code: failure.Code!,
-          message: failure.Message!,
+          code: this.sanitizeErrorCode(failure.Code!),
+          message: this.sanitizeErrorMessage(failure.Message!),
         });
       });
     } catch (error: any) {
@@ -147,8 +186,8 @@ export class IngestService {
           originalIndex: entry._meta.idx,
           chunkId: entry._meta.chunkId,
           status: "rejected",
-          code: "BatchError",
-          message: error.message ?? String(error),
+          code: "BATCH_ERROR",
+          message: this.sanitizeErrorMessage(error.message ?? String(error)),
         });
       });
     }
