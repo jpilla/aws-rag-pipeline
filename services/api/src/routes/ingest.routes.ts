@@ -45,10 +45,13 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`Processing ingest request with ${records.length} records${idempotencyKey ? ` (idempotency key: ${idempotencyKey})` : ''}`);
+    req.logger.info({
+      recordCount: records.length,
+      idempotencyKey
+    }, "Processing ingest request");
 
     // Process the records
-    const { batchId, results, errors } = await service.ingest(records, idempotencyKey);
+    const { batchId, results, errors } = await service.ingest(records, idempotencyKey, req.requestId);
 
     // Build summary - distinguish between actually enqueued vs already processed
     const actuallyEnqueued = results.filter(r => r.processingStatus === 'ENQUEUED').length;
@@ -73,14 +76,21 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
     };
 
     const totalDuration = Date.now() - requestStartTime;
-    console.log(`Ingest API completed in ${totalDuration}ms for batch ${batchId}`);
+    req.logger.info({
+      batchId,
+      duration: totalDuration,
+      summary
+    }, "Ingest API completed");
 
     // Add Location header for the created resource
     res.set('Location', `/v1/ingest/${batchId}`);
     res.status(status).json(response);
   } catch (error: any) {
     const totalDuration = Date.now() - requestStartTime;
-    console.error(`Ingest API failed after ${totalDuration}ms:`, error);
+    req.logger.error({
+      duration: totalDuration,
+      error: error.message ?? String(error)
+    }, "Ingest API failed");
 
     res.status(500).json({
       error: "Internal server error",
@@ -96,6 +106,7 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
 router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
   try {
     const { batchId } = req.params;
+    req.logger.info({ batchId }, "Checking batch status");
 
     if (!batchId) {
       return res.status(400).json({ error: "batchId parameter is required" });
@@ -171,7 +182,10 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     res.json(response);
 
   } catch (error: any) {
-    console.error(`Status check failed for batch ${req.params.batchId}:`, error);
+    req.logger.error({
+      batchId: req.params.batchId,
+      error: error.message ?? String(error)
+    }, "Status check failed");
     res.status(500).json({
       error: "Internal server error",
       message: error.message ?? String(error),

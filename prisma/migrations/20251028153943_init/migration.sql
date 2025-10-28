@@ -4,6 +4,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- CreateEnum
 CREATE TYPE "ProcessingStatus" AS ENUM ('ENQUEUED', 'INGESTED', 'FAILED');
 
+-- CreateEnum
+CREATE TYPE "FailureReason" AS ENUM ('COMPUTE_EMBEDDINGS_FAILURE', 'DATA_LAYER_FAILURE');
+
 -- CreateTable
 CREATE TABLE "IdempotencyKey" (
     "idempotencyKey" TEXT NOT NULL,
@@ -31,6 +34,7 @@ CREATE TABLE "Chunk" (
     "chunkIndex" INTEGER NOT NULL,
     "content" TEXT NOT NULL,
     "status" "ProcessingStatus" NOT NULL DEFAULT 'ENQUEUED',
+    "failureReason" "FailureReason",
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 

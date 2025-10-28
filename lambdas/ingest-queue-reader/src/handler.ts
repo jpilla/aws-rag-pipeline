@@ -59,7 +59,22 @@ export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
 
   const failures: SQSBatchItemFailure[] = [];
 
-  logger.info({ records: event.Records.length, awsRequestId: (event as any).requestContext?.requestId }, "SQS batch received");
+  // Extract request-ids from message bodies for batch-level logging
+  const requestIds = event.Records.map(record => {
+    try {
+      const payload = JSON.parse(record.body);
+      return payload.metadata?.requestId;
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+  const uniqueRequestIds = [...new Set(requestIds)];
+
+  logger.info({
+    records: event.Records.length,
+    awsRequestId: (event as any).requestContext?.requestId,
+    requestIds: uniqueRequestIds.length > 0 ? uniqueRequestIds : undefined
+  }, "SQS batch received");
 
   // Parse all records and separate valid from invalid ones
   const validRecords: Array<{ messageId: string; payload: Payload }> = [];
@@ -95,7 +110,8 @@ export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
       logger.info({
         total: validRecords.length,
         success: successCount,
-        failed: failureCount
+        failed: failureCount,
+        requestIds: uniqueRequestIds.length > 0 ? uniqueRequestIds : undefined
       }, "Batch processing completed");
 
     } catch (err: any) {
