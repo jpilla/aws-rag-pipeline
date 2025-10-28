@@ -1,6 +1,41 @@
 import type { SQSBatchItemFailure, SQSBatchResponse, SQSHandler } from "aws-lambda";
 import { logger } from "./lib/logger.js";
-import { processBatch, type Payload, closeClients } from "./lib/processor.js";
+import { processBatch, type Payload, closeClients, initializeClients } from "./lib/processor.js";
+
+// Initialize clients immediately when the module loads (blocking)
+let clientsInitialized = false;
+
+// Block on client initialization - this ensures clients are ready before handler can be called
+try {
+  // Use a synchronous approach to ensure clients are initialized before handler export
+  const initPromise = initializeClients();
+
+  // Set up a promise that resolves when clients are ready
+  const clientsReady = initPromise.then(() => {
+    clientsInitialized = true;
+    logger.info("Lambda clients initialized at module load time");
+  }).catch((error) => {
+    logger.error({ error }, "Failed to initialize clients at module load time");
+    throw error; // Re-throw to prevent handler from being exported
+  });
+
+  // Export the handler only after clients are initialized
+  module.exports.handler = async (event: any): Promise<SQSBatchResponse> => {
+    // Wait for clients to be ready (should already be resolved)
+    await clientsReady;
+
+    return await processRequest(event);
+  };
+
+} catch (error) {
+  logger.error({ error }, "Critical failure during module initialization");
+  // Export a handler that always fails
+  module.exports.handler = async (event: any): Promise<SQSBatchResponse> => {
+    return {
+      batchItemFailures: event.Records.map((record: any) => ({ itemIdentifier: record.messageId }))
+    };
+  };
+}
 
 // Set up graceful shutdown handlers
 let isShuttingDown = false;
@@ -16,10 +51,10 @@ const gracefulShutdown = async (signal: string) => {
 
   try {
     await closeClients();
-    logger.info("Graceful shutdown completed");
+    logger.info("Lambda graceful shutdown completed");
     process.exit(0);
   } catch (error) {
-    logger.error({ error }, "Error during graceful shutdown");
+    logger.error({ error }, "Error during Lambda graceful shutdown");
     process.exit(1);
   }
 };
@@ -48,19 +83,19 @@ const parseJson = (s: string) => {
   }
 };
 
-export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
+async function processRequest(event: any): Promise<SQSBatchResponse> {
   // Check if we're shutting down
   if (isShuttingDown) {
     logger.warn("Handler called during shutdown, rejecting all messages");
     return {
-      batchItemFailures: event.Records.map(record => ({ itemIdentifier: record.messageId }))
+      batchItemFailures: event.Records.map((record: any) => ({ itemIdentifier: record.messageId }))
     };
   }
 
   const failures: SQSBatchItemFailure[] = [];
 
   // Extract request-ids from message bodies for batch-level logging
-  const requestIds = event.Records.map(record => {
+  const requestIds = event.Records.map((record: any) => {
     try {
       const payload = JSON.parse(record.body);
       return payload.metadata?.requestId;

@@ -16,6 +16,7 @@ import { prismaService } from "./prisma.service";
 export class IngestService {
   private sqsClient: SQSClient;
   private queueUrl: string;
+  private isInitialized: boolean = false;
 
   constructor(queueUrl: string, region: string = "us-east-1") {
     this.queueUrl = queueUrl;
@@ -23,6 +24,32 @@ export class IngestService {
       region,
       maxAttempts: 3,
     });
+  }
+
+  /**
+   * Initialize the SQS client and test connectivity
+   */
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      return;
+    }
+
+    try {
+      // Test SQS connectivity by getting queue attributes
+      const { GetQueueAttributesCommand } = await import("@aws-sdk/client-sqs");
+      await this.sqsClient.send(
+        new GetQueueAttributesCommand({
+          QueueUrl: this.queueUrl,
+          AttributeNames: ["QueueArn"]
+        })
+      );
+
+      this.isInitialized = true;
+      console.log(`SQS client initialized for queue: ${this.queueUrl}`);
+    } catch (error) {
+      console.error("Failed to initialize SQS client:", error);
+      throw new Error(`SQS client initialization failed: ${error}`);
+    }
   }
 
   /**
