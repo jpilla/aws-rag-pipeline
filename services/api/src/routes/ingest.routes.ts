@@ -50,11 +50,15 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
     // Process the records
     const { batchId, results, errors } = await service.ingest(records, idempotencyKey);
 
-    // Build summary
+    // Build summary - distinguish between actually enqueued vs already processed
+    const actuallyEnqueued = results.filter(r => r.processingStatus === 'ENQUEUED').length;
+    const alreadyProcessed = results.filter(r => r.processingStatus === 'INGESTED').length;
+
     const summary: IngestSummary = {
       received: records.length,
-      enqueued: results.length,
+      enqueued: actuallyEnqueued,
       rejected: errors.length,
+      ...(alreadyProcessed > 0 && { alreadyProcessed }),
     };
 
     // Determine response status
@@ -135,8 +139,9 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     const chunks: ChunkStatusInfo[] = chunkData.embeddings.map((chunk: any) => ({
       chunkId: chunk.id,
       chunkIndex: chunk.chunkIndex,
+      clientId: chunk.clientId,
       status: chunk.status as ChunkStatus,
-      failureReason: chunk.status === 'FAILED' ? 'COMPUTE_EMBEDDINGS_FAILURE' as FailureReason : undefined,
+      failureReason: chunk.failureReason as FailureReason | undefined,
       createdAt: chunk.createdAt,
       updatedAt: chunk.updatedAt
     }));

@@ -100,78 +100,6 @@ export class PrismaService {
     return { isValid: true };
   }
 
-  /**
-   * Create or update multiple embeddings
-   */
-  async createEmbeddings(embeddings: any[]): Promise<{ success: boolean; count: number; ids: string[]; error?: string }> {
-    try {
-      const client = await this.getClient();
-
-      // Use raw SQL for vector operations since Prisma doesn't support vector type
-      const insertPromises = embeddings.map(embedding => {
-        const embeddingString = `[${embedding.embedding.join(',')}]`;
-        return client.$executeRaw`
-          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, embedding, "createdAt", "updatedAt")
-          VALUES (${embedding.id}, ${embedding.docId || null}, ${embedding.chunkIndex}, ${embedding.content}, ${embeddingString}::vector, NOW(), NOW())
-          ON CONFLICT (id)
-          DO UPDATE SET
-            "docId" = EXCLUDED."docId",
-            "chunkIndex" = EXCLUDED."chunkIndex",
-            content = EXCLUDED.content,
-            embedding = EXCLUDED.embedding,
-            "updatedAt" = NOW()
-        `;
-      });
-
-      // Execute all inserts in parallel
-      await Promise.all(insertPromises);
-
-      return {
-        success: true,
-        count: embeddings.length,
-        ids: embeddings.map(emb => emb.id)
-      };
-    } catch (error: any) {
-      console.error("Embeddings creation failed:", error);
-      return {
-        success: false,
-        count: 0,
-        ids: [],
-        error: error.message || "Failed to create embeddings"
-      };
-    }
-  }
-
-  /**
-   * Retrieve multiple embeddings by their IDs
-   */
-  async getEmbeddings(ids: string[]): Promise<{ success: boolean; embeddings: any[]; count: number; error?: string }> {
-    try {
-      const client = await this.getClient();
-
-      // Use raw SQL since we can't use Prisma with vector type
-      // Cast embedding to text to avoid deserialization issues
-      const embeddings = await client.$queryRaw`
-        SELECT id, "docId", "chunkIndex", content, embedding::text as embedding, "createdAt"
-        FROM "Embedding"
-        WHERE id = ANY(${ids})
-      `;
-
-      return {
-        success: true,
-        embeddings: embeddings as any[],
-        count: (embeddings as any[]).length
-      };
-    } catch (error: any) {
-      console.error("Embeddings retrieval failed:", error);
-      return {
-        success: false,
-        embeddings: [],
-        count: 0,
-        error: error.message || "Failed to retrieve embeddings"
-      };
-    }
-  }
 
   /**
    * Find similar embeddings using vector similarity search with pgvector
@@ -194,11 +122,12 @@ export class PrismaService {
       const cosineThreshold = 2 - (threshold * 2); // Convert similarity to distance
 
       const embeddings = await client.$queryRaw`
-        SELECT id, "docId", "chunkIndex", content,
-               (embedding <=> ${embeddingString}::vector) as distance
-        FROM "Embedding"
-        WHERE (embedding <=> ${embeddingString}::vector) < ${cosineThreshold}
-        ORDER BY embedding <=> ${embeddingString}::vector
+        SELECT c.id, c."batchId" as "docId", c."chunkIndex", c.content,
+               (e.embedding <=> ${embeddingString}::vector) as distance
+        FROM "Embedding" e
+        JOIN "Chunk" c ON e."contentHash" = c."contentHash"
+        WHERE (e.embedding <=> ${embeddingString}::vector) < ${cosineThreshold}
+        ORDER BY e.embedding <=> ${embeddingString}::vector
         LIMIT ${limit}
       `;
 
@@ -237,6 +166,7 @@ export class PrismaService {
                  WHEN c.status = 'FAILED' THEN 'FAILED'
                  ELSE 'ENQUEUED'
                END as status,
+               c."failureReason",
                c."createdAt", c."updatedAt"
         FROM "Chunk" c
         LEFT JOIN "Embedding" e ON c."contentHash" = e."contentHash"
@@ -375,7 +305,7 @@ export class PrismaService {
   }
 
   /**
-   * Close the Prisma client
+   * Close the Prisma client connection
    */
   async close(): Promise<void> {
     if (this.client) {
@@ -384,6 +314,7 @@ export class PrismaService {
       console.log('Prisma client disconnected');
     }
   }
+
 }
 
 // Export a singleton instance

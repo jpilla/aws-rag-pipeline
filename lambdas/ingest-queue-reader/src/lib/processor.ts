@@ -11,6 +11,7 @@ export type Payload = {
   batchId: string;
   enqueuedAt: string;
   contentHash: string;
+  originalIndex: number;
 };
 
 let prismaClient: PrismaClient | null = null;
@@ -96,6 +97,32 @@ async function getOpenAIClient(): Promise<OpenAI> {
   return openaiClient;
 }
 
+/**
+ * Gracefully close all client connections
+ */
+export async function closeClients(): Promise<void> {
+  const closePromises: Promise<void>[] = [];
+
+  if (prismaClient) {
+    closePromises.push(
+      prismaClient.$disconnect().then(() => {
+        logger.info("Prisma client disconnected");
+        prismaClient = null;
+      }).catch((error: any) => {
+        logger.error({ error }, "Failed to disconnect Prisma client");
+      })
+    );
+  }
+
+  // OpenAI client doesn't need explicit cleanup, but we can reset the reference
+  if (openaiClient) {
+    openaiClient = null;
+    logger.info("OpenAI client reference cleared");
+  }
+
+  await Promise.all(closePromises);
+}
+
 
 async function generateEmbeddings(contents: string[]): Promise<number[][]> {
   const openai = await getOpenAIClient();
@@ -151,7 +178,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
     const chunkIds = processedRecords.map(record => record.chunkId);
     const batchIds = processedRecords.map(record => record.payload.batchId);
     const clientIds = processedRecords.map(record => record.payload.clientId);
-    const chunkIndexes = processedRecords.map(() => 0);
+    const chunkIndexes = processedRecords.map(record => record.payload.originalIndex);
     const contents = processedRecords.map(record => record.processedContent);
 
     await prisma.$transaction(async (tx: any) => {
@@ -188,7 +215,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
     logger.info({ contentHashes }, "Phase 2: Checking which embeddings need computation");
 
     const existingEmbeddings = await prisma.$queryRaw<Array<{ contentHash: string; embedding: any }>>`
-      SELECT "contentHash", embedding FROM "Embedding"
+      SELECT "contentHash", embedding::text as embedding FROM "Embedding"
       WHERE "contentHash" = ANY(${contentHashes}) AND embedding IS NOT NULL
     `;
 
@@ -206,7 +233,9 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
       needProcessing: recordsToProcess.length
     }, "Processing status analysis");
 
-    // Phase 3: Generate embeddings for new content (outside transaction)
+    // Phase 3: Generate embeddings for new content (if needed)
+    let embeddings: number[][] | null = null;
+
     if (recordsToProcess.length > 0) {
       logger.info({
         recordsToProcess: recordsToProcess.length,
@@ -218,7 +247,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         const contents = recordsToProcess.map(record => record.processedContent);
 
         logger.info({ contentCount: contents.length }, "Generating embeddings batch");
-        const embeddings = await generateEmbeddings(contents);
+        embeddings = await generateEmbeddings(contents);
 
         // Validate embeddings batch
         if (!embeddings || embeddings.length !== contents.length) {
@@ -240,58 +269,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
           }
         }
 
-        // Phase 4: Update embeddings and chunk status (short transaction)
-        logger.info({ recordCount: recordsToProcess.length }, "Phase 4: Updating embeddings and chunk status");
-
-        const newContentHashes = recordsToProcess.map(record => record.contentHash);
-        const embeddingStrings = embeddings.map(embedding => `[${embedding.join(',')}]`);
-
-        try {
-          await prisma.$transaction(async (tx: any) => {
-            // Update embeddings with real values
-            await tx.$executeRaw`
-              UPDATE "Embedding"
-              SET embedding = unnest(${embeddingStrings}::vector[])
-              WHERE "contentHash" = ANY(${newContentHashes})
-            `;
-
-            // Update chunks to INGESTED status
-            await tx.$executeRaw`
-              UPDATE "Chunk"
-              SET status = 'INGESTED', "updatedAt" = NOW()
-              WHERE "contentHash" = ANY(${newContentHashes})
-            `;
-          });
-
-          logger.info({ updatedCount: newContentHashes.length }, "Batch updated embeddings and chunk status");
-
-        } catch (dbError) {
-          logger.error({ error: dbError, recordCount: recordsToProcess.length }, "Database update failed - marking chunks as FAILED");
-
-          // Update failed chunks (short transaction)
-          const failedChunkIds = recordsToProcess.map(record => record.chunkId);
-          try {
-            await prisma.$executeRaw`
-              UPDATE "Chunk"
-              SET status = 'FAILED', "updatedAt" = NOW()
-              WHERE id = ANY(${failedChunkIds})
-            `;
-          } catch (updateError) {
-            logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
-          }
-
-          // Add failed results
-          recordsToProcess.forEach(record => {
-            results.push({
-              messageId: record.messageId,
-              payload: record.payload,
-              success: false,
-              error: dbError instanceof Error ? dbError.message : 'Database update failed',
-            });
-          });
-
-          return results;
-        }
+        logger.info({ generatedCount: embeddings.length }, "Embeddings generated successfully");
 
       } catch (embeddingError) {
         logger.error({ error: embeddingError, recordCount: recordsToProcess.length }, "Embedding generation failed - marking chunks as FAILED");
@@ -301,7 +279,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         try {
           await prisma.$executeRaw`
             UPDATE "Chunk"
-            SET status = 'FAILED', "updatedAt" = NOW()
+            SET status = 'FAILED', "failureReason" = 'COMPUTE_EMBEDDINGS_FAILURE', "updatedAt" = NOW()
             WHERE id = ANY(${failedChunkIds})
           `;
         } catch (updateError) {
@@ -321,30 +299,73 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         return results;
       }
     } else {
-      // All embeddings already exist, just update chunk status
-      logger.info({ recordCount: records.length }, "All embeddings already exist, updating chunk status");
+      logger.info({ recordCount: records.length }, "All embeddings already exist, skipping generation");
+    }
 
-      try {
-        await prisma.$executeRaw`
+    // Phase 4: Update database (embeddings + chunk status)
+    logger.info({
+      recordCount: records.length,
+      hasNewEmbeddings: embeddings !== null
+    }, "Phase 4: Updating database");
+
+    try {
+      await prisma.$transaction(async (tx: any) => {
+        // Update embeddings if we generated new ones
+        if (embeddings && recordsToProcess.length > 0) {
+          const contentHashes = recordsToProcess.map(record => record.contentHash);
+          const embeddingStrings = embeddings.map(embedding => `[${embedding.join(',')}]`);
+
+          // Use subquery with unnest - avoids the UPDATE restriction
+          await tx.$executeRaw`
+            UPDATE "Embedding"
+            SET embedding = subq.embedding
+            FROM (
+              SELECT
+                unnest(${contentHashes}::text[]) as "contentHash",
+                unnest(${embeddingStrings}::vector[]) as embedding
+            ) AS subq
+            WHERE "Embedding"."contentHash" = subq."contentHash"
+          `;
+
+          logger.info({ updatedEmbeddings: recordsToProcess.length }, "Updated embeddings");
+        }
+
+        // Update all chunks to INGESTED status
+        await tx.$executeRaw`
           UPDATE "Chunk"
           SET status = 'INGESTED', "updatedAt" = NOW()
           WHERE "contentHash" = ANY(${contentHashes})
         `;
-      } catch (dbError) {
-        logger.error({ error: dbError, recordCount: records.length }, "Failed to update chunk status for existing embeddings");
+      });
 
-        // Mark all records as failed due to database error
-        records.forEach(record => {
-          results.push({
-            messageId: record.messageId,
-            payload: record.payload,
-            success: false,
-            error: dbError instanceof Error ? dbError.message : 'Database update failed',
-          });
-        });
+      logger.info({ updatedCount: contentHashes.length }, "Batch updated chunk status to INGESTED");
 
-        return results;
+    } catch (dbError) {
+      logger.error({ error: dbError, recordCount: records.length }, "Database update failed - marking chunks as FAILED");
+
+      // Update failed chunks (short transaction)
+      const failedChunkIds = processedRecords.map(record => record.chunkId);
+      try {
+        await prisma.$executeRaw`
+          UPDATE "Chunk"
+          SET status = 'FAILED', "failureReason" = 'DATA_LAYER_FAILURE', "updatedAt" = NOW()
+          WHERE id = ANY(${failedChunkIds})
+        `;
+      } catch (updateError) {
+        logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
       }
+
+      // Add failed results
+      records.forEach(record => {
+        results.push({
+          messageId: record.messageId,
+          payload: record.payload,
+          success: false,
+          error: dbError instanceof Error ? dbError.message : 'Database update failed',
+        });
+      });
+
+      return results;
     }
 
     // Add successful results for all records

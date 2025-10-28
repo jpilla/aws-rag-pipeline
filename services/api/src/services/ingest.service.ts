@@ -97,7 +97,8 @@ export class IngestService {
    */
   private createQueueMessage(
     record: IngestRecordWithId,
-    batchId: string
+    batchId: string,
+    originalIndex: number
   ): QueueMessage {
     const content = typeof record.content === 'string'
       ? record.content
@@ -117,6 +118,7 @@ export class IngestService {
       batchId,
       enqueuedAt: new Date().toISOString(),
       contentHash,
+      originalIndex,
     };
   }
 
@@ -129,14 +131,15 @@ export class IngestService {
     startIndex: number
   ): QueueEntry[] {
     return records.map((record, idx) => {
-      const message = this.createQueueMessage(record, batchId);
+      const originalIndex = startIndex + idx;
+      const message = this.createQueueMessage(record, batchId, originalIndex);
       return {
         Id: message.chunkId,
         MessageBody: JSON.stringify(message),
         _meta: {
           chunkId: message.chunkId,
           clientId: record.clientId,
-          idx: startIndex + idx,
+          idx: originalIndex,
         },
       };
     });
@@ -167,7 +170,6 @@ export class IngestService {
           clientId: entry._meta.clientId,
           originalIndex: entry._meta.idx,
           chunkId: entry._meta.chunkId,
-          messageId: success.MessageId!, // Keep for now - may be useful for debugging
           status: "enqueued",
         });
       });
@@ -302,18 +304,47 @@ export class IngestService {
         return null;
       }
 
-      // Get the batch status to return appropriate results
-      const batchStatus = await prismaService.getBatchStatus(result.batchId);
-      if (!batchStatus.success) {
+      // Get detailed chunk information to return individual chunk status
+      const chunkData = await prismaService.getEmbeddingsByBatchId(result.batchId);
+      if (!chunkData.success) {
         return null;
       }
 
-      // For now, return empty results/errors since we don't store the original response
-      // In a production system, you might want to cache the full response
+      // Transform chunk data to IngestResult/IngestError format
+      const results: IngestResult[] = [];
+      const errors: IngestError[] = [];
+
+      chunkData.embeddings.forEach((chunk: any) => {
+        const chunkResult = {
+          clientId: chunk.clientId,
+          originalIndex: chunk.chunkIndex,
+          chunkId: chunk.id,
+          status: "enqueued" as const,
+          processingStatus: chunk.status as "ENQUEUED" | "INGESTED" | "FAILED",
+        };
+
+        if (chunk.status === 'ENQUEUED') {
+          results.push(chunkResult);
+        } else if (chunk.status === 'FAILED') {
+          errors.push({
+            clientId: chunk.clientId,
+            originalIndex: chunk.chunkIndex,
+            chunkId: chunk.id,
+            status: "rejected",
+            code: "PROCESSING_ERROR",
+            message: chunk.failureReason || "Processing failed",
+          });
+        } else if (chunk.status === 'INGESTED') {
+          // For ingested chunks, we still return them as "enqueued"
+          // since they were successfully processed
+          results.push(chunkResult);
+        }
+      });
+
       return {
         batchId: result.batchId,
-        results: [],
-        errors: []
+        results,
+        errors
       };
     } catch (error) {
       console.error("Failed to get existing batch:", error);

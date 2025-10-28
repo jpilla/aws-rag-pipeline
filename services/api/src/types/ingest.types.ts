@@ -27,6 +27,7 @@ export interface QueueMessage {
   batchId: string;
   enqueuedAt: string;
   contentHash: string;
+  originalIndex: number;
 }
 
 export interface QueueEntry {
@@ -43,8 +44,8 @@ export interface IngestResult {
   clientId: string;
   originalIndex: number;
   chunkId: string;
-  messageId: string;
   status: "enqueued";
+  processingStatus?: "ENQUEUED" | "INGESTED" | "FAILED";
 }
 
 export interface IngestError {
@@ -60,6 +61,7 @@ export interface IngestSummary {
   received: number;
   enqueued: number;
   rejected: number;
+  alreadyProcessed?: number;
 }
 
 export interface IngestResponse {

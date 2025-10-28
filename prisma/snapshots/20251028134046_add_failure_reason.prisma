@@ -14,6 +14,7 @@ enum ProcessingStatus {
 }
 
 enum FailureReason {
+  ENQUEUE_FAILURE
   COMPUTE_EMBEDDINGS_FAILURE
   DATA_LAYER_FAILURE
 }

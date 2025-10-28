@@ -5,13 +5,13 @@
 export type ChunkStatus = 'ENQUEUED' | 'INGESTED' | 'FAILED';
 
 export type FailureReason =
-  | 'ENQUEUE_FAILURE'      // Failed to enqueue to SQS
   | 'COMPUTE_EMBEDDINGS_FAILURE'  // Failed to compute embeddings (OpenAI API issues)
   | 'DATA_LAYER_FAILURE';  // Failed to store in database
 
 export interface ChunkStatusInfo {
   chunkId: string;
   chunkIndex: number;
+  clientId: string;
   status: ChunkStatus;
   failureReason?: FailureReason;
   createdAt: string;
