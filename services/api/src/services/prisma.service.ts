@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { logger } from '../lib/logger';
 
 /**
  * Service for managing Prisma database operations
@@ -37,7 +38,7 @@ export class PrismaService {
         log: ['error', 'warn'],
       });
 
-      console.log(`Prisma client initialized: ${host}:${port}/${database}`);
+      logger.info({ host, port, database }, "Prisma client initialized");
     }
 
     return this.client;
@@ -55,7 +56,7 @@ export class PrismaService {
         message: 'Prisma database connection successful',
       };
     } catch (error: any) {
-      console.error('Prisma connection test failed:', error);
+      logger.error({ error }, "Prisma connection test failed");
       return {
         success: false,
         message: error.message || 'Prisma database connection failed',
@@ -137,7 +138,7 @@ export class PrismaService {
         count: (embeddings as any[]).length
       };
     } catch (error: any) {
-      console.error("Vector similarity search failed:", error);
+      logger.error({ error }, "Vector similarity search failed");
       return {
         success: false,
         embeddings: [],
@@ -180,7 +181,7 @@ export class PrismaService {
         count: (embeddings as any[]).length
       };
     } catch (error: any) {
-      console.error("Batch embeddings retrieval failed:", error);
+      logger.error({ error }, "Batch embeddings retrieval failed");
       return {
         success: false,
         embeddings: [],
@@ -233,7 +234,7 @@ export class PrismaService {
         completedAt: stats.completed_at
       };
     } catch (error: any) {
-      console.error("Batch status retrieval failed:", error);
+      logger.error({ error }, "Batch status retrieval failed");
       return {
         success: false,
         batchId,
@@ -264,7 +265,7 @@ export class PrismaService {
 
       return { success: true };
     } catch (error: any) {
-      console.error("Failed to store idempotency key:", error);
+      logger.error({ error }, "Failed to store idempotency key");
       return {
         success: false,
         error: error.message || "Failed to store idempotency key"
@@ -296,7 +297,7 @@ export class PrismaService {
         batchId: result[0].batchId
       };
     } catch (error: any) {
-      console.error("Failed to get batch by idempotency key:", error);
+      logger.error({ error }, "Failed to get batch by idempotency key");
       return {
         success: false,
         error: error.message || "Failed to get batch by idempotency key"
@@ -311,7 +312,7 @@ export class PrismaService {
     if (this.client) {
       await this.client.$disconnect();
       this.client = undefined;
-      console.log('Prisma client disconnected');
+      logger.info('Prisma client disconnected');
     }
   }
 

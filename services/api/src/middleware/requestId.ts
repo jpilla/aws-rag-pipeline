@@ -1,20 +1,19 @@
 import { Request, Response, NextFunction } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { logger } from "../lib/logger";
+import { runWithRequestContext } from "../lib/logger";
 
-// Extend Express Request interface to include requestId and child logger
+// Extend Express Request interface to include requestId
 declare global {
   namespace Express {
     interface Request {
       requestId: string;
-      logger: any; // pino child logger
     }
   }
 }
 
 /**
  * Middleware to generate and assign a Request-Id header
- * Creates a child logger with request-id context for automatic inclusion in all logs
+ * Sets up request context for automatic logging throughout the request lifecycle
  */
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
   // Generate a new request ID or use existing one from headers
@@ -23,11 +22,11 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
   // Attach to request object for use in route handlers
   req.requestId = requestId;
 
-  // Create a child logger with request-id context
-  req.logger = logger.child({ requestId });
-
   // Set the Request-Id header on the response
   res.set('Request-Id', requestId);
 
-  next();
+  // Run the rest of the request with request context
+  runWithRequestContext(requestId, () => {
+    next();
+  });
 }

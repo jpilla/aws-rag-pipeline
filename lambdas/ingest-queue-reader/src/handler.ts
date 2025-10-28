@@ -4,6 +4,7 @@ import { processBatch, type Payload, closeClients, initializeClients } from "./l
 
 // Initialize clients immediately when the module loads (blocking)
 let clientsInitialized = false;
+let clientsReady: Promise<void>;
 
 // Block on client initialization - this ensures clients are ready before handler can be called
 try {
@@ -11,7 +12,7 @@ try {
   const initPromise = initializeClients();
 
   // Set up a promise that resolves when clients are ready
-  const clientsReady = initPromise.then(() => {
+  clientsReady = initPromise.then(() => {
     clientsInitialized = true;
     logger.info("Lambda clients initialized at module load time");
   }).catch((error) => {
@@ -19,23 +20,23 @@ try {
     throw error; // Re-throw to prevent handler from being exported
   });
 
-  // Export the handler only after clients are initialized
-  module.exports.handler = async (event: any): Promise<SQSBatchResponse> => {
-    // Wait for clients to be ready (should already be resolved)
-    await clientsReady;
-
-    return await processRequest(event);
-  };
-
 } catch (error) {
   logger.error({ error }, "Critical failure during module initialization");
-  // Export a handler that always fails
-  module.exports.handler = async (event: any): Promise<SQSBatchResponse> => {
+  clientsReady = Promise.reject(error);
+}
+
+// Export the handler - it will wait for clients to be ready
+export const handler = async (event: any): Promise<SQSBatchResponse> => {
+  try {
+    await clientsReady;
+    return await processRequest(event);
+  } catch (error) {
+    logger.error({ error }, "Handler failed due to client initialization error");
     return {
       batchItemFailures: event.Records.map((record: any) => ({ itemIdentifier: record.messageId }))
     };
-  };
-}
+  }
+};
 
 // Set up graceful shutdown handlers
 let isShuttingDown = false;
