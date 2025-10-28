@@ -3,6 +3,8 @@ import { IngestService } from "../services/ingest.service";
 import { prismaService } from "../services/prisma.service";
 import { IngestRequest, IngestResponse, IngestSummary } from "../types/ingest.types";
 import { BatchStatusResponse, ChunkStatusInfo, ChunkStatus, FailureReason } from "../types/status.types";
+import { createValidationMiddleware, sendValidationError } from "../middleware/validation";
+import { IngestValidators } from "../middleware/ingestValidation";
 
 const router = Router();
 
@@ -26,7 +28,7 @@ function getIngestService(): IngestService {
  * POST /v1/ingest
  * Ingests records into the SQS queue for processing
  */
-router.post("/v1/ingest", async (req: Request, res: Response) => {
+router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIngestRequest), async (req: Request, res: Response) => {
   const requestStartTime = Date.now();
 
   // Validate environment configuration
@@ -39,7 +41,7 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
   // Support both standard Idempotency-Key and lowercase idempotency-key headers
   const idempotencyKey = (req.headers['Idempotency-Key'] || req.headers['idempotency-key']) as string;
 
-  // Validate request payload
+  // Additional service-level validation (keeping existing logic)
   if (!service.validateRecords(records)) {
     return res.status(400).json({ error: "records[] required" });
   }
@@ -108,8 +110,10 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     const { batchId } = req.params;
     req.logger.info({ batchId }, "Checking batch status");
 
-    if (!batchId) {
-      return res.status(400).json({ error: "batchId parameter is required" });
+    // Validate batch ID
+    const validationResult = IngestValidators.validateBatchId(batchId);
+    if (!validationResult.isValid) {
+      return sendValidationError(res, validationResult.errors);
     }
 
     // Get batch status summary
