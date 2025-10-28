@@ -11,19 +11,13 @@ const PORT = Number(process.env.PORT || 3000);
 
 app.disable('x-powered-by');
 
-// Root endpoint
 app.get("/", (_req, res) => res.json({ message: "hello world!" }));
 
-// Middleware for JSON parsing (must be before routes that use it)
 app.use(express.json({ limit: "1mb", type: ["application/json", "application/*+json"] }));
 
-// Common validation middleware - apply to all routes
 app.use(commonValidationMiddleware);
-
-// Request ID middleware - apply to all routes
 app.use(requestIdMiddleware);
 
-// Mount route handlers
 app.use(healthRoutes);
 app.use(ingestRoutes);
 app.use(queryRoutes);

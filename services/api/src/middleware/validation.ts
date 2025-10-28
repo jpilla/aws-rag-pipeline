@@ -139,18 +139,6 @@ export const commonValidationMiddleware = (req: Request, res: Response, next: Ne
     }
   }
 
-  // Check request size (Express already handles this with limit, but we can add custom logic)
-  const contentLength = parseInt(req.get('Content-Length') || '0');
-  const maxSizeBytes = 1024 * 1024; // 1MB
-
-  if (contentLength > maxSizeBytes) {
-    errors.push({
-      field: 'Content-Length',
-      message: `Request body must be no larger than ${maxSizeBytes} bytes (1MB)`,
-      value: contentLength
-    });
-  }
-
   if (errors.length > 0) {
     return res.status(400).json({
       error: 'Validation failed',
