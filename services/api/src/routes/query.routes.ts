@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import { prismaService } from "../services/prisma.service";
 import { openaiService } from "../services/openai.service";
 import { QueryRequest, QueryResponse, ContextChunk } from "../types/query.types";
+import { createValidationMiddleware } from "../middleware/validation";
+import { QueryValidators } from "../middleware/queryValidation";
 
 const router = Router();
 
@@ -9,29 +11,10 @@ const router = Router();
  * POST /v1/query
  * Query the RAG pipeline with a natural language question
  */
-router.post("/v1/query", async (req: Request, res: Response) => {
+router.post("/v1/query", createValidationMiddleware(QueryValidators.validateQueryRequest), async (req: Request, res: Response) => {
   try {
     const { query, limit = 5, threshold = 0.7 } = req.body as QueryRequest;
     req.logger.info({ query, limit, threshold }, "Processing query request");
-
-    // Validate request payload
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({
-        error: "query is required and must be a string"
-      });
-    }
-
-    if (limit && (typeof limit !== 'number' || limit < 1 || limit > 20)) {
-      return res.status(400).json({
-        error: "limit must be a number between 1 and 20"
-      });
-    }
-
-    if (threshold && (typeof threshold !== 'number' || threshold < 0 || threshold > 1)) {
-      return res.status(400).json({
-        error: "threshold must be a number between 0 and 1"
-      });
-    }
 
     // 1. Generate embedding for the query
     req.logger.info("Generating embedding for query");
