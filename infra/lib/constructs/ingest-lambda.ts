@@ -31,7 +31,7 @@ export class IngestLambda extends Construct {
         // Build context is project root, Dockerfile is in lambdas/ingest-queue-reader/
         file: 'lambdas/ingest-queue-reader/Dockerfile',
       }),
-      memorySize: 512,
+      memorySize: 2048,
       timeout: Duration.seconds(15),
       architecture: lambda.Architecture.X86_64,
       vpc,
