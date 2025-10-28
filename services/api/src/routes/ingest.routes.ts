@@ -15,13 +15,27 @@ const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 let ingestService: IngestService | null = null;
 
 /**
- * Lazy initialization of ingest service
+ * Initialize ingest service at startup (called from server.ts)
+ */
+export async function initializeIngestService(): Promise<void> {
+  if (!QUEUE_URL) {
+    throw new Error("INGEST_QUEUE_URL environment variable not set");
+  }
+
+  if (!ingestService) {
+    ingestService = new IngestService(QUEUE_URL, AWS_REGION);
+    await ingestService.initialize();
+  }
+}
+
+/**
+ * Get the pre-initialized ingest service
  */
 function getIngestService(): IngestService {
-  if (!ingestService && QUEUE_URL) {
-    ingestService = new IngestService(QUEUE_URL, AWS_REGION);
+  if (!ingestService) {
+    throw new Error("IngestService not initialized. Call initializeIngestService() first.");
   }
-  return ingestService!;
+  return ingestService;
 }
 
 /**

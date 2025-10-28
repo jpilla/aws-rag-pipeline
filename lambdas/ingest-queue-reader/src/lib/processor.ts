@@ -14,23 +14,76 @@ export type Payload = {
   originalIndex: number;
 };
 
+// Global client instances - initialized once per Lambda container
 let prismaClient: PrismaClient | null = null;
 let openaiClient: OpenAI | null = null;
+let secretsClient: SecretsManagerClient | null = null;
+let isInitialized: boolean = false;
 
-async function getPrismaClient(): Promise<PrismaClient> {
-  if (prismaClient) {
-    return prismaClient;
+/**
+ * Validate required environment variables
+ */
+function validateEnvironment(): void {
+  const requiredEnvVars = [
+    'DB_SECRET_ARN',
+    'OPENAI_SECRET_ARN',
+    'DB_HOST',
+    'DB_NAME'
+  ];
+
+  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+  if (missingVars.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
 
-  const secretsClient = new SecretsManagerClient({});
-  const secretArn = process.env.DB_SECRET_ARN;
+  logger.info("Lambda environment variables validated");
+}
 
+/**
+ * Initialize all clients once per Lambda container
+ * This runs outside the handler to minimize cold start latency
+ */
+export async function initializeClients(): Promise<void> {
+  if (isInitialized) {
+    return;
+  }
+
+  logger.info("Initializing Lambda clients...");
+
+  try {
+    // Validate environment first
+    validateEnvironment();
+
+    // Initialize Secrets Manager client
+    secretsClient = new SecretsManagerClient({});
+
+    // Initialize Prisma client
+    await initializePrismaClient();
+
+    // Initialize OpenAI client
+    await initializeOpenAIClient();
+
+    isInitialized = true;
+    logger.info("All Lambda clients initialized successfully");
+  } catch (error) {
+    logger.error({ error }, "Failed to initialize Lambda clients");
+    throw error;
+  }
+}
+
+async function initializePrismaClient(): Promise<void> {
+  if (prismaClient) {
+    return;
+  }
+
+  const secretArn = process.env.DB_SECRET_ARN;
   if (!secretArn) {
     throw new Error("DB_SECRET_ARN environment variable not set");
   }
 
   const command = new GetSecretValueCommand({ SecretId: secretArn });
-  const secretValue = await secretsClient.send(command);
+  const secretValue = await secretsClient!.send(command);
 
   if (!secretValue.SecretString) {
     throw new Error("Failed to retrieve database credentials");
@@ -64,24 +117,20 @@ async function getPrismaClient(): Promise<PrismaClient> {
     }, "Failed to connect to database");
     throw new Error(`Database connection failed: ${connectionError}`);
   }
-
-  return prismaClient;
 }
 
-async function getOpenAIClient(): Promise<OpenAI> {
+async function initializeOpenAIClient(): Promise<void> {
   if (openaiClient) {
-    return openaiClient;
+    return;
   }
 
-  const secretsClient = new SecretsManagerClient({});
   const secretArn = process.env.OPENAI_SECRET_ARN;
-
   if (!secretArn) {
     throw new Error("OPENAI_SECRET_ARN environment variable not set");
   }
 
   const command = new GetSecretValueCommand({ SecretId: secretArn });
-  const secretValue = await secretsClient.send(command);
+  const secretValue = await secretsClient!.send(command);
 
   if (!secretValue.SecretString) {
     throw new Error("Failed to retrieve OpenAI API key");
@@ -94,7 +143,20 @@ async function getOpenAIClient(): Promise<OpenAI> {
   });
 
   logger.info("OpenAI client initialized");
-  return openaiClient;
+}
+
+async function getPrismaClient(): Promise<PrismaClient> {
+  if (!prismaClient) {
+    await initializePrismaClient();
+  }
+  return prismaClient!;
+}
+
+async function getOpenAIClient(): Promise<OpenAI> {
+  if (!openaiClient) {
+    await initializeOpenAIClient();
+  }
+  return openaiClient!;
 }
 
 /**
