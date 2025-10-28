@@ -2,7 +2,6 @@ import { logger } from "./logger.js";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
-import crypto from "crypto";
 
 export type Payload = {
   chunkId: string;
@@ -11,6 +10,7 @@ export type Payload = {
   metadata: Record<string, any>;
   batchId: string;
   enqueuedAt: string;
+  contentHash: string;
 };
 
 let prismaClient: PrismaClient | null = null;
@@ -127,107 +127,92 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
   const results: ProcessedRecord[] = [];
 
   try {
-    // Pre-process all records (chunkId already computed by API)
+    // Pre-process all records using pre-computed contentHash from API
     const processedRecords = records.map(record => {
       const content = typeof record.payload.content === 'string'
         ? record.payload.content
         : JSON.stringify(record.payload.content);
-      // chunkId is already computed by the API service
+
       const chunkId = record.payload.chunkId;
+      const contentHash = record.payload.contentHash; // Use pre-computed hash from API
 
       return {
         ...record,
         processedContent: content,
-        chunkId
+        chunkId,
+        contentHash
       };
     });
 
-    // Phase 1: Insert all records with ENQUEUED status (idempotent via contentHash)
-    logger.info({ recordCount: records.length }, "Phase 1: Inserting records with ENQUEUED status");
+    // Phase 1: Insert chunks and placeholder embeddings (short transaction)
+    logger.info({ recordCount: records.length }, "Phase 1: Inserting chunks and placeholder embeddings");
 
-    // Prepare batch insert data
-    const insertData = processedRecords.map(record => ({
-      chunkId: record.chunkId,
-      clientId: record.payload.clientId,
-      content: record.processedContent,
-      originalRecord: record
-    }));
+    const contentHashes = processedRecords.map(record => record.contentHash);
+    const chunkIds = processedRecords.map(record => record.chunkId);
+    const batchIds = processedRecords.map(record => record.payload.batchId);
+    const clientIds = processedRecords.map(record => record.payload.clientId);
+    const chunkIndexes = processedRecords.map(() => 0);
+    const contents = processedRecords.map(record => record.processedContent);
 
-    // Batch insert using Prisma's createMany equivalent with raw SQL
-    try {
-      // Use unnest for efficient batch insert
-      const chunkIds = insertData.map(d => d.chunkId);
-      const clientIds = insertData.map(d => d.clientId);
-      const chunkIndexes = insertData.map(() => 0);
-      const contents = insertData.map(d => d.content);
+    await prisma.$transaction(async (tx: any) => {
+      // Insert placeholder embeddings first (required for FK)
+      await tx.$executeRaw`
+        INSERT INTO "Embedding" ("contentHash", embedding, "createdAt")
+        SELECT
+          unnest(${contentHashes}::text[]) as "contentHash",
+          NULL as embedding,
+          NOW() as "createdAt"
+        ON CONFLICT ("contentHash") DO NOTHING
+      `;
 
-      await prisma.$executeRaw`
-        INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, status, "createdAt", "updatedAt")
+      // Insert chunks with ENQUEUED status
+      await tx.$executeRaw`
+        INSERT INTO "Chunk" (id, "contentHash", "batchId", "clientId", "chunkIndex", content, status, "createdAt", "updatedAt")
         SELECT
           unnest(${chunkIds}::text[]) as id,
-          unnest(${clientIds}::text[]) as "docId",
+          unnest(${contentHashes}::text[]) as "contentHash",
+          unnest(${batchIds}::text[]) as "batchId",
+          unnest(${clientIds}::text[]) as "clientId",
           unnest(${chunkIndexes}::int[]) as "chunkIndex",
           unnest(${contents}::text[]) as content,
           'ENQUEUED' as status,
           NOW() as "createdAt",
           NOW() as "updatedAt"
-        ON CONFLICT (id) DO NOTHING
+        ON CONFLICT ("contentHash", "batchId") DO NOTHING
       `;
+    });
 
-      logger.info({ recordCount: insertData.length }, "Batch inserted records with ENQUEUED status");
-    } catch (dbError) {
-      logger.error({ error: dbError, recordCount: insertData.length }, "Failed to batch insert records");
-      // Continue processing - individual records might still exist
-    }
+    logger.info({ recordCount: processedRecords.length }, "Batch inserted chunks and placeholder embeddings");
 
-    // Phase 2: Check which records need processing
-    const chunkIds = processedRecords.map(record => record.chunkId);
+    // Phase 2: Check which embeddings need computation (outside transaction)
+    logger.info({ contentHashes }, "Phase 2: Checking which embeddings need computation");
 
-    logger.info({ chunkIds }, "Phase 2: Checking which records need processing");
-
-    const existingRecords = await prisma.$queryRaw<Array<{ id: string; status: string }>>`
-      SELECT id, status FROM "Embedding"
-      WHERE id = ANY(${chunkIds})
+    const existingEmbeddings = await prisma.$queryRaw<Array<{ contentHash: string; embedding: any }>>`
+      SELECT "contentHash", embedding FROM "Embedding"
+      WHERE "contentHash" = ANY(${contentHashes}) AND embedding IS NOT NULL
     `;
 
-    const alreadyIngestedIds = new Set(
-      existingRecords
-        .filter((record: { id: string; status: string }) => record.status === 'INGESTED')
-        .map((record: { id: string; status: string }) => record.id)
+    const existingContentHashes = new Set(
+      existingEmbeddings.map((record: { contentHash: string }) => record.contentHash)
     );
 
     const recordsToProcess = processedRecords.filter(record =>
-      !alreadyIngestedIds.has(record.chunkId)
+      !existingContentHashes.has(record.contentHash)
     );
 
     logger.info({
       totalRecords: records.length,
-      alreadyIngested: alreadyIngestedIds.size,
+      alreadyIngested: existingContentHashes.size,
       needProcessing: recordsToProcess.length
     }, "Processing status analysis");
 
-    // Short circuit if all already ingested
-    if (recordsToProcess.length === 0) {
-      logger.info({ recordCount: records.length }, "All chunks already ingested, skipping OpenAI processing");
-
-      processedRecords.forEach(record => {
-        results.push({
-          messageId: record.messageId,
-          payload: record.payload,
-          success: true,
-        });
-      });
-
-      return results;
-    }
-
-    // Phase 3: Process remaining records with OpenAI (batched)
-    logger.info({
-      recordsToProcess: recordsToProcess.length,
-      skippedRecords: records.length - recordsToProcess.length
-    }, "Phase 3: Processing remaining records with OpenAI (batched)");
-
+    // Phase 3: Generate embeddings for new content (outside transaction)
     if (recordsToProcess.length > 0) {
+      logger.info({
+        recordsToProcess: recordsToProcess.length,
+        skippedRecords: records.length - recordsToProcess.length
+      }, "Phase 3: Generating embeddings for new content");
+
       try {
         // Prepare all contents for batch embedding generation
         const contents = recordsToProcess.map(record => record.processedContent);
@@ -255,81 +240,125 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
           }
         }
 
-        // Batch update all records to INGESTED status using UPDATE FROM
-        const chunkIds = recordsToProcess.map(record => record.chunkId);
+        // Phase 4: Update embeddings and chunk status (short transaction)
+        logger.info({ recordCount: recordsToProcess.length }, "Phase 4: Updating embeddings and chunk status");
+
+        const newContentHashes = recordsToProcess.map(record => record.contentHash);
         const embeddingStrings = embeddings.map(embedding => `[${embedding.join(',')}]`);
 
-        await prisma.$executeRaw`
-          UPDATE "Embedding"
-          SET embedding = updates.embedding,
-              status = 'INGESTED',
-              "updatedAt" = NOW()
-          FROM (
-            SELECT
-              unnest(${chunkIds}::text[]) as id,
-              unnest(${embeddingStrings}::vector[]) as embedding
-          ) AS updates
-          WHERE "Embedding".id = updates.id
-        `;
+        try {
+          await prisma.$transaction(async (tx: any) => {
+            // Update embeddings with real values
+            await tx.$executeRaw`
+              UPDATE "Embedding"
+              SET embedding = unnest(${embeddingStrings}::vector[])
+              WHERE "contentHash" = ANY(${newContentHashes})
+            `;
 
-        logger.info({ updatedCount: chunkIds.length }, "Batch updated records to INGESTED status");
+            // Update chunks to INGESTED status
+            await tx.$executeRaw`
+              UPDATE "Chunk"
+              SET status = 'INGESTED', "updatedAt" = NOW()
+              WHERE "contentHash" = ANY(${newContentHashes})
+            `;
+          });
 
-        // Add successful results
-        const updateResults = recordsToProcess.map(record => ({
-          messageId: record.messageId,
-          payload: record.payload,
-          success: true,
-        }));
+          logger.info({ updatedCount: newContentHashes.length }, "Batch updated embeddings and chunk status");
 
-        results.push(...updateResults);
+        } catch (dbError) {
+          logger.error({ error: dbError, recordCount: recordsToProcess.length }, "Database update failed - marking chunks as FAILED");
 
-        logger.info({
-          processedCount: updateResults.length,
-          successCount: updateResults.filter(r => r.success).length
-        }, "Batch embedding processing completed");
+          // Update failed chunks (short transaction)
+          const failedChunkIds = recordsToProcess.map(record => record.chunkId);
+          try {
+            await prisma.$executeRaw`
+              UPDATE "Chunk"
+              SET status = 'FAILED', "updatedAt" = NOW()
+              WHERE id = ANY(${failedChunkIds})
+            `;
+          } catch (updateError) {
+            logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
+          }
 
-      } catch (openaiError) {
-        logger.error({ error: openaiError, recordCount: recordsToProcess.length }, "OpenAI batch processing failed - marking all as FAILED");
+          // Add failed results
+          recordsToProcess.forEach(record => {
+            results.push({
+              messageId: record.messageId,
+              payload: record.payload,
+              success: false,
+              error: dbError instanceof Error ? dbError.message : 'Database update failed',
+            });
+          });
 
-        // Batch update all records to FAILED status
-        const chunkIds = recordsToProcess.map(record => record.chunkId);
+          return results;
+        }
 
-        await prisma.$executeRaw`
-          UPDATE "Embedding"
-          SET status = 'FAILED', "updatedAt" = NOW()
-          WHERE id = ANY(${chunkIds})
-        `;
+      } catch (embeddingError) {
+        logger.error({ error: embeddingError, recordCount: recordsToProcess.length }, "Embedding generation failed - marking chunks as FAILED");
 
-        logger.info({ failedCount: chunkIds.length }, "Batch updated records to FAILED status");
+        // Update failed chunks (short transaction)
+        const failedChunkIds = recordsToProcess.map(record => record.chunkId);
+        try {
+          await prisma.$executeRaw`
+            UPDATE "Chunk"
+            SET status = 'FAILED', "updatedAt" = NOW()
+            WHERE id = ANY(${failedChunkIds})
+          `;
+        } catch (updateError) {
+          logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
+        }
 
         // Add failed results
-        const failedResults = recordsToProcess.map(record => ({
-          messageId: record.messageId,
-          payload: record.payload,
-          success: false,
-          error: openaiError instanceof Error ? openaiError.message : 'OpenAI batch processing failed',
-        }));
+        recordsToProcess.forEach(record => {
+          results.push({
+            messageId: record.messageId,
+            payload: record.payload,
+            success: false,
+            error: embeddingError instanceof Error ? embeddingError.message : 'Embedding generation failed',
+          });
+        });
 
-        results.push(...failedResults);
+        return results;
+      }
+    } else {
+      // All embeddings already exist, just update chunk status
+      logger.info({ recordCount: records.length }, "All embeddings already exist, updating chunk status");
+
+      try {
+        await prisma.$executeRaw`
+          UPDATE "Chunk"
+          SET status = 'INGESTED', "updatedAt" = NOW()
+          WHERE "contentHash" = ANY(${contentHashes})
+        `;
+      } catch (dbError) {
+        logger.error({ error: dbError, recordCount: records.length }, "Failed to update chunk status for existing embeddings");
+
+        // Mark all records as failed due to database error
+        records.forEach(record => {
+          results.push({
+            messageId: record.messageId,
+            payload: record.payload,
+            success: false,
+            error: dbError instanceof Error ? dbError.message : 'Database update failed',
+          });
+        });
+
+        return results;
       }
     }
 
-    // Add already ingested records as successful
+    // Add successful results for all records
     processedRecords.forEach(record => {
-      if (alreadyIngestedIds.has(record.chunkId)) {
-        results.push({
-          messageId: record.messageId,
-          payload: record.payload,
-          success: true,
-        });
-      }
+      results.push({
+        messageId: record.messageId,
+        payload: record.payload,
+        success: true,
+      });
     });
 
     logger.info({
       recordCount: records.length,
       successCount: results.length,
-      alreadyIngested: alreadyIngestedIds.size,
-      newlyProcessed: results.filter(r => r.success).length - alreadyIngestedIds.size,
       failed: results.filter(r => !r.success).length
     }, "Batch processing completed");
 

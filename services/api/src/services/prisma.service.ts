@@ -231,16 +231,17 @@ export class PrismaService {
       const client = await this.getClient();
 
       const embeddings = await client.$queryRaw`
-        SELECT id, "batchId", "docId", "chunkIndex", content,
+        SELECT c.id, c."batchId", c."clientId", c."chunkIndex", c.content,
                CASE
-                 WHEN embedding IS NOT NULL THEN 'INGESTED'
-                 WHEN status = 'FAILED' THEN 'FAILED'
+                 WHEN e.embedding IS NOT NULL THEN 'INGESTED'
+                 WHEN c.status = 'FAILED' THEN 'FAILED'
                  ELSE 'ENQUEUED'
                END as status,
-               "createdAt", "updatedAt"
-        FROM "Embedding"
-        WHERE "batchId" = ${batchId}
-        ORDER BY "chunkIndex"
+               c."createdAt", c."updatedAt"
+        FROM "Chunk" c
+        LEFT JOIN "Embedding" e ON c."contentHash" = e."contentHash"
+        WHERE c."batchId" = ${batchId}
+        ORDER BY c."chunkIndex"
       `;
 
       return {
@@ -279,13 +280,14 @@ export class PrismaService {
       const result = await client.$queryRaw`
         SELECT
           COUNT(*) as total_chunks,
-          COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END) as ingested_chunks,
-          COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed_chunks,
-          COUNT(CASE WHEN embedding IS NULL AND status != 'FAILED' THEN 1 END) as enqueued_chunks,
-          MIN("createdAt") as created_at,
-          MAX(CASE WHEN embedding IS NOT NULL OR status = 'FAILED' THEN "updatedAt" END) as completed_at
-        FROM "Embedding"
-        WHERE "batchId" = ${batchId}
+          COUNT(CASE WHEN e.embedding IS NOT NULL THEN 1 END) as ingested_chunks,
+          COUNT(CASE WHEN c.status = 'FAILED' THEN 1 END) as failed_chunks,
+          COUNT(CASE WHEN e.embedding IS NULL AND c.status != 'FAILED' THEN 1 END) as enqueued_chunks,
+          MIN(c."createdAt") as created_at,
+          MAX(CASE WHEN e.embedding IS NOT NULL OR c.status = 'FAILED' THEN c."updatedAt" END) as completed_at
+        FROM "Chunk" c
+        LEFT JOIN "Embedding" e ON c."contentHash" = e."contentHash"
+        WHERE c."batchId" = ${batchId}
       `;
 
       const stats = (result as any[])[0];
@@ -310,6 +312,64 @@ export class PrismaService {
         ingestedChunks: 0,
         failedChunks: 0,
         error: error.message || "Failed to retrieve batch status"
+      };
+    }
+  }
+
+  /**
+   * Store idempotency key mapping
+   */
+  async storeIdempotencyKey(
+    idempotencyKey: string,
+    batchId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = await this.getClient();
+
+      await client.$executeRaw`
+        INSERT INTO "IdempotencyKey" ("idempotencyKey", "batchId", "createdAt")
+        VALUES (${idempotencyKey}, ${batchId}, NOW())
+        ON CONFLICT ("idempotencyKey") DO NOTHING
+      `;
+
+      return { success: true };
+    } catch (error: any) {
+      console.error("Failed to store idempotency key:", error);
+      return {
+        success: false,
+        error: error.message || "Failed to store idempotency key"
+      };
+    }
+  }
+
+  /**
+   * Get batch ID by idempotency key
+   */
+  async getBatchByKey(
+    idempotencyKey: string
+  ): Promise<{ success: boolean; batchId?: string; error?: string }> {
+    try {
+      const client = await this.getClient();
+
+      const result = await client.$queryRaw<Array<{ batchId: string }>>`
+        SELECT "batchId" FROM "IdempotencyKey"
+        WHERE "idempotencyKey" = ${idempotencyKey}
+        LIMIT 1
+      `;
+
+      if (result.length === 0) {
+        return { success: true };
+      }
+
+      return {
+        success: true,
+        batchId: result[0].batchId
+      };
+    } catch (error: any) {
+      console.error("Failed to get batch by idempotency key:", error);
+      return {
+        success: false,
+        error: error.message || "Failed to get batch by idempotency key"
       };
     }
   }

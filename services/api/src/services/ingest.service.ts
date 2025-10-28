@@ -2,11 +2,13 @@ import { SQSClient, SendMessageBatchCommand } from "@aws-sdk/client-sqs";
 import crypto from "crypto";
 import {
   IngestRecord,
+  IngestRecordWithId,
   QueueMessage,
   QueueEntry,
   IngestResult,
   IngestError,
 } from "../types/ingest.types";
+import { prismaService } from "./prisma.service";
 
 /**
  * Service for handling data ingestion to SQS queue
@@ -94,15 +96,18 @@ export class IngestService {
    * Transforms a single record into a queue message
    */
   private createQueueMessage(
-    record: IngestRecord,
+    record: IngestRecordWithId,
     batchId: string
   ): QueueMessage {
     const content = typeof record.content === 'string'
       ? record.content
       : JSON.stringify(record.content);
 
-    // Use contentHash as chunkId for consistent deduplication when chunkId not provided
-    const chunkId = record.chunkId ?? this.generateContentHash(content);
+    // chunkId is now always provided (computed at API level)
+    const chunkId = record.chunkId;
+
+    // Always compute contentHash for deduplication
+    const contentHash = this.generateContentHash(content);
 
     return {
       chunkId,
@@ -111,6 +116,7 @@ export class IngestService {
       metadata: record.metadata ?? {},
       batchId,
       enqueuedAt: new Date().toISOString(),
+      contentHash,
     };
   }
 
@@ -118,7 +124,7 @@ export class IngestService {
    * Creates SQS batch entries from records with metadata for tracking
    */
   createBatchEntries(
-    records: IngestRecord[],
+    records: IngestRecordWithId[],
     batchId: string,
     startIndex: number
   ): QueueEntry[] {
@@ -199,7 +205,7 @@ export class IngestService {
    * Processes records in batches of 10 (SQS batch limit) with parallel execution
    */
   async processRecords(
-    records: IngestRecord[],
+    records: IngestRecordWithId[],
     batchId: string
   ): Promise<{
     results: IngestResult[];
@@ -231,23 +237,122 @@ export class IngestService {
   }
 
   /**
+   * Preprocesses input records by generating chunkIds for each record
+   */
+  private preprocessRecords(records: IngestRecord[]): IngestRecordWithId[] {
+    return records.map(record => ({
+      ...record,
+      chunkId: this.generateChunkId()
+    }));
+  }
+
+  /**
    * Main entry point for ingesting records
    */
-  async ingest(records: IngestRecord[]): Promise<{
+  async ingest(records: IngestRecord[], idempotencyKey?: string): Promise<{
     batchId: string;
     results: IngestResult[];
     errors: IngestError[];
   }> {
     const startTime = Date.now();
+
+    // Check for existing idempotency key first
+    if (idempotencyKey) {
+      const existingBatch = await this.getExistingBatch(idempotencyKey);
+      if (existingBatch) {
+        console.log(`Returning existing batch ${existingBatch.batchId} for idempotency key ${idempotencyKey}`);
+        return existingBatch;
+      }
+    }
+
     const batchId = this.generateBatchId();
 
-    console.log(`Starting ingest for batch ${batchId} with ${records.length} records`);
+    // Preprocess records to generate chunkIds
+    const preprocessedRecords = this.preprocessRecords(records);
 
-    const { results, errors } = await this.processRecords(records, batchId);
+    // Deduplicate records within the batch based on content hash
+    const deduplicatedRecords = this.deduplicateRecords(preprocessedRecords);
+
+    console.log(`Starting ingest for batch ${batchId} with ${records.length} records (${deduplicatedRecords.length} after deduplication)`);
+
+    const { results, errors } = await this.processRecords(deduplicatedRecords, batchId);
+
+    // Store idempotency mapping if key provided
+    if (idempotencyKey) {
+      await this.storeIdempotencyMapping(idempotencyKey, batchId);
+    }
 
     const duration = Date.now() - startTime;
     console.log(`Completed ingest for batch ${batchId} in ${duration}ms - ${results.length} successful, ${errors.length} failed`);
 
     return { batchId, results, errors };
+  }
+
+  /**
+   * Get existing batch by idempotency key
+   */
+  private async getExistingBatch(idempotencyKey: string): Promise<{
+    batchId: string;
+    results: IngestResult[];
+    errors: IngestError[];
+  } | null> {
+    try {
+      const result = await prismaService.getBatchByKey(idempotencyKey);
+      if (!result.success || !result.batchId) {
+        return null;
+      }
+
+      // Get the batch status to return appropriate results
+      const batchStatus = await prismaService.getBatchStatus(result.batchId);
+      if (!batchStatus.success) {
+        return null;
+      }
+
+      // For now, return empty results/errors since we don't store the original response
+      // In a production system, you might want to cache the full response
+      return {
+        batchId: result.batchId,
+        results: [],
+        errors: []
+      };
+    } catch (error) {
+      console.error("Failed to get existing batch:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Store idempotency key mapping
+   */
+  private async storeIdempotencyMapping(idempotencyKey: string, batchId: string): Promise<void> {
+    try {
+      await prismaService.storeIdempotencyKey(idempotencyKey, batchId);
+    } catch (error) {
+      console.error("Failed to store idempotency mapping:", error);
+      // Don't throw - this is not critical for the main flow
+    }
+  }
+
+  /**
+   * Deduplicates records within a batch based on content hash
+   * Keeps the first occurrence of each unique content
+   */
+  private deduplicateRecords(records: IngestRecordWithId[]): IngestRecordWithId[] {
+    const seenContentHashes = new Set<string>();
+    const deduplicated: IngestRecordWithId[] = [];
+
+    for (const record of records) {
+      const content = typeof record.content === 'string'
+        ? record.content
+        : JSON.stringify(record.content);
+      const contentHash = this.generateContentHash(content);
+
+      if (!seenContentHashes.has(contentHash)) {
+        seenContentHashes.add(contentHash);
+        deduplicated.push(record);
+      }
+    }
+
+    return deduplicated;
   }
 }

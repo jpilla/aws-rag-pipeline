@@ -36,6 +36,8 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
 
   const service = getIngestService();
   const { records } = req.body as IngestRequest;
+  // Support both standard Idempotency-Key and lowercase idempotency-key headers
+  const idempotencyKey = (req.headers['Idempotency-Key'] || req.headers['idempotency-key']) as string;
 
   // Validate request payload
   if (!service.validateRecords(records)) {
@@ -43,10 +45,10 @@ router.post("/v1/ingest", async (req: Request, res: Response) => {
   }
 
   try {
-    console.log(`Processing ingest request with ${records.length} records`);
+    console.log(`Processing ingest request with ${records.length} records${idempotencyKey ? ` (idempotency key: ${idempotencyKey})` : ''}`);
 
     // Process the records
-    const { batchId, results, errors } = await service.ingest(records);
+    const { batchId, results, errors } = await service.ingest(records, idempotencyKey);
 
     // Build summary
     const summary: IngestSummary = {

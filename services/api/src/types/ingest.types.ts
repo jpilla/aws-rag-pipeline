@@ -3,7 +3,13 @@
  */
 
 export interface IngestRecord {
-  chunkId?: string;
+  clientId: string;
+  content: any;
+  metadata?: Record<string, any>;
+}
+
+export interface IngestRecordWithId {
+  chunkId: string;
   clientId: string;
   content: any;
   metadata?: Record<string, any>;
@@ -20,6 +26,7 @@ export interface QueueMessage {
   metadata: Record<string, any>;
   batchId: string;
   enqueuedAt: string;
+  contentHash: string;
 }
 
 export interface QueueEntry {
@@ -61,4 +68,3 @@ export interface IngestResponse {
   results: IngestResult[];
   errors: IngestError[];
 }
-
