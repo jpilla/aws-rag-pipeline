@@ -12,6 +12,7 @@ const router = Router();
 router.post("/v1/query", async (req: Request, res: Response) => {
   try {
     const { query, limit = 5, threshold = 0.7 } = req.body as QueryRequest;
+    req.logger.info({ query, limit, threshold }, "Processing query request");
 
     // Validate request payload
     if (!query || typeof query !== 'string') {
@@ -33,11 +34,11 @@ router.post("/v1/query", async (req: Request, res: Response) => {
     }
 
     // 1. Generate embedding for the query
-    console.log("Generating embedding for query:", query);
+    req.logger.info("Generating embedding for query");
     const queryEmbedding = await openaiService.generateEmbedding(query);
 
     // 2. Find similar embeddings using vector search
-    console.log("Searching for similar embeddings...");
+    req.logger.info("Searching for similar embeddings");
     const searchResult = await prismaService.findSimilarEmbeddings(
       queryEmbedding,
       limit,
@@ -66,7 +67,7 @@ router.post("/v1/query", async (req: Request, res: Response) => {
       .join('\n\n');
 
     // 4. Generate completion using OpenAI
-    console.log("Generating completion...");
+    req.logger.info("Generating completion");
     const answer = await openaiService.generateCompletion(context, query);
 
     // 5. Format response
@@ -86,7 +87,9 @@ router.post("/v1/query", async (req: Request, res: Response) => {
     res.json(response);
 
   } catch (error: any) {
-    console.error("Query processing failed:", error);
+    req.logger.error({
+      error: error.message ?? String(error)
+    }, "Query processing failed");
     res.status(500).json({
       error: "Internal server error",
       message: error.message || "Failed to process query"

@@ -98,7 +98,8 @@ export class IngestService {
   private createQueueMessage(
     record: IngestRecordWithId,
     batchId: string,
-    originalIndex: number
+    originalIndex: number,
+    requestId?: string
   ): QueueMessage {
     const content = typeof record.content === 'string'
       ? record.content
@@ -114,7 +115,10 @@ export class IngestService {
       chunkId,
       clientId: record.clientId,
       content: record.content,
-      metadata: record.metadata ?? {},
+      metadata: {
+        ...record.metadata ?? {},
+        ...(requestId && { requestId })
+      },
       batchId,
       enqueuedAt: new Date().toISOString(),
       contentHash,
@@ -128,11 +132,12 @@ export class IngestService {
   createBatchEntries(
     records: IngestRecordWithId[],
     batchId: string,
-    startIndex: number
+    startIndex: number,
+    requestId?: string
   ): QueueEntry[] {
     return records.map((record, idx) => {
       const originalIndex = startIndex + idx;
-      const message = this.createQueueMessage(record, batchId, originalIndex);
+      const message = this.createQueueMessage(record, batchId, originalIndex, requestId);
       return {
         Id: message.chunkId,
         MessageBody: JSON.stringify(message),
@@ -208,7 +213,8 @@ export class IngestService {
    */
   async processRecords(
     records: IngestRecordWithId[],
-    batchId: string
+    batchId: string,
+    requestId?: string
   ): Promise<{
     results: IngestResult[];
     errors: IngestError[];
@@ -221,7 +227,7 @@ export class IngestService {
     const batchEntries: QueueEntry[][] = [];
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const slice = records.slice(i, i + BATCH_SIZE);
-      const entries = this.createBatchEntries(slice, batchId, i);
+      const entries = this.createBatchEntries(slice, batchId, i, requestId);
       batchEntries.push(entries);
     }
 
@@ -251,7 +257,7 @@ export class IngestService {
   /**
    * Main entry point for ingesting records
    */
-  async ingest(records: IngestRecord[], idempotencyKey?: string): Promise<{
+  async ingest(records: IngestRecord[], idempotencyKey?: string, requestId?: string): Promise<{
     batchId: string;
     results: IngestResult[];
     errors: IngestError[];
@@ -277,7 +283,7 @@ export class IngestService {
 
     console.log(`Starting ingest for batch ${batchId} with ${records.length} records (${deduplicatedRecords.length} after deduplication)`);
 
-    const { results, errors } = await this.processRecords(deduplicatedRecords, batchId);
+    const { results, errors } = await this.processRecords(deduplicatedRecords, batchId, requestId);
 
     // Store idempotency mapping if key provided
     if (idempotencyKey) {
