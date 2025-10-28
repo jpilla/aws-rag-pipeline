@@ -13,11 +13,6 @@ enum ProcessingStatus {
   FAILED
 }
 
-enum FailureReason {
-  COMPUTE_EMBEDDINGS_FAILURE
-  DATA_LAYER_FAILURE
-}
-
 model IdempotencyKey {
   idempotencyKey String   @id
   batchId        String
@@ -34,16 +29,15 @@ model Embedding {
 }
 
 model Chunk {
-  id            String           @id
-  contentHash   String
-  batchId       String
-  clientId      String?
-  chunkIndex    Int
-  content       String
-  status        ProcessingStatus  @default(ENQUEUED)
-  failureReason FailureReason?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id          String           @id
+  contentHash String
+  batchId     String
+  clientId    String?
+  chunkIndex  Int
+  content     String
+  status      ProcessingStatus  @default(ENQUEUED)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   // Relations - Required FK, but embedding can be NULL initially
   embedding Embedding @relation(fields: [contentHash], references: [contentHash])

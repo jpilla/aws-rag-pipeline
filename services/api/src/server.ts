@@ -1,7 +1,6 @@
 import express from "express";
 import healthRoutes from "./routes/health.routes";
 import ingestRoutes from "./routes/ingest.routes";
-import embeddingsRoutes from "./routes/embeddings.routes";
 import queryRoutes from "./routes/query.routes";
 
 const app = express();
@@ -16,7 +15,6 @@ app.use(express.json({ limit: "10mb", type: ["application/json", "application/*+
 // Mount route handlers
 app.use(healthRoutes);
 app.use(ingestRoutes);
-app.use(embeddingsRoutes);
 app.use(queryRoutes);
 
 app.listen(PORT, () => {

@@ -1,6 +1,5 @@
-❯ curl -v -X POST "http://InfraS-ApiSe-Qs52SQQBFV64-998980122.eu-west-1.elb.amazonaws.com/v1/ingest" \
+❯ curl -v -X POST "http://InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com/v1/ingest" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: 4f2ce3d2-b71e-4d0e-bd11-34a2f2e5d989" \
   -d '{
     "records": [
       { "clientId": "chunk-001", "content": "The quick brown fox jumps over the lazy dog." },
@@ -23,34 +22,34 @@
 Note: Unnecessary use of -X or --request, POST is already inferred.
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Host InfraS-ApiSe-Qs52SQQBFV64-998980122.eu-west-1.elb.amazonaws.com:80 was resolved.
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Host InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com:80 was resolved.
 * IPv6: (none)
-* IPv4: 108.128.186.144, 54.171.136.1
-*   Trying 108.128.186.144:80...
-* Connected to InfraS-ApiSe-Qs52SQQBFV64-998980122.eu-west-1.elb.amazonaws.com (108.128.186.144) port 80
+* IPv4: 52.209.243.220, 54.76.222.30
+*   Trying 52.209.243.220:80...
+* Connected to InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com (52.209.243.220) port 80
 > POST /v1/ingest HTTP/1.1
-> Host: InfraS-ApiSe-Qs52SQQBFV64-998980122.eu-west-1.elb.amazonaws.com
+> Host: InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com
 > User-Agent: curl/8.7.1
 > Accept: */*
 > Content-Type: application/json
-> Idempotency-Key: 4f2ce3d2-b71e-4d0e-bd11-34a2f2e5d989
 > Content-Length: 1557
-> 
+>
 } [1557 bytes data]
 * upload completely sent off: 1557 bytes
 < HTTP/1.1 202 Accepted
-< Date: Tue, 07 Oct 2025 19:19:46 GMT
+< Date: Tue, 28 Oct 2025 12:43:51 GMT
 < Content-Type: application/json; charset=utf-8
 < Content-Length: 2609
 < Connection: keep-alive
 < X-Powered-By: Express
-< ETag: W/"a31-j+B2yVEhepuLKUX0qz38A+xDN5Y"
-< 
-{ [1097 bytes data]
-100  4166  100  2609  100  1557   4858   2899 --:--:-- --:--:-- --:--:--  7772
-* Connection #0 to host InfraS-ApiSe-Qs52SQQBFV64-998980122.eu-west-1.elb.amazonaws.com left intact
+< Location: /v1/ingest/b_16ea69c6-06ab-44a3-9c74-e5ae35664510
+< ETag: W/"a31-XA6IUf4edItjZM2B3zIy0y8x9GE"
+<
+{ [1036 bytes data]
+100  4166  100  2609  100  1557   3845   2295 --:--:-- --:--:-- --:--:--  6135
+* Connection #0 to host InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com left intact
 {
-  "batchId": "b_fc568bed-72b0-41e3-90b9-6e680ad6c92e",
+  "batchId": "b_16ea69c6-06ab-44a3-9c74-e5ae35664510",
   "summary": {
     "received": 15,
     "enqueued": 15,
@@ -60,249 +59,336 @@ Note: Unnecessary use of -X or --request, POST is already inferred.
     {
       "clientId": "chunk-001",
       "originalIndex": 0,
-      "chunkId": "c_100fffa3-c277-477e-9f83-534d96c504a8",
-      "messageId": "2306add9-01b0-415c-baf8-930fc32b5178",
+      "chunkId": "c_30a60bc3-e9e7-4685-bc4c-e6b3290590bb",
+      "messageId": "a3accb48-a7b0-4666-acbb-93135891b865",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-002",
       "originalIndex": 1,
-      "chunkId": "c_4a5ccdcf-f7c0-4ce8-b0f1-fa5b42d43945",
-      "messageId": "11f95fae-0b81-4baf-9954-b1e2dd3b2404",
+      "chunkId": "c_b1d87aa1-8a05-4afa-8aab-83317858bb75",
+      "messageId": "e476c3c2-c9db-4464-baaf-791cea019301",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-003",
       "originalIndex": 2,
-      "chunkId": "c_43d6e6c4-cd0a-40a1-a032-b9a666c6efcf",
-      "messageId": "a9f5000e-6f36-4d20-a059-9048e1f56ecb",
+      "chunkId": "c_0d073f37-53be-4b3b-94aa-9033ee9430f1",
+      "messageId": "b4857535-cce2-42c0-97b1-f3343b3927f1",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-004",
       "originalIndex": 3,
-      "chunkId": "c_30d66d02-3987-439b-a6b3-8069c96203fe",
-      "messageId": "c78316ca-da2f-4634-b388-31ec220d3838",
+      "chunkId": "c_4bb2ae56-3533-4f9f-932c-2474e6bd39bd",
+      "messageId": "1292f049-f946-4285-b189-273883923ccf",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-005",
       "originalIndex": 4,
-      "chunkId": "c_10c3b754-fdbb-401d-9d18-cadb4c4c44c0",
-      "messageId": "16612ce1-9948-4f2a-845a-e3e4e2f988ce",
+      "chunkId": "c_392ac221-800d-4bd5-8f3c-b7d2d46d5be5",
+      "messageId": "bcd25c88-ab05-419c-aa5d-9eb21cd28fbf",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-006",
       "originalIndex": 5,
-      "chunkId": "c_48d5c4f7-8331-43bc-b826-e9218ab6fe82",
-      "messageId": "8a4f2567-5237-4c65-ab2e-a29e350faa7d",
+      "chunkId": "c_79bc37d6-6b53-494c-a02c-1161dda47347",
+      "messageId": "7065ea78-b9a5-45a2-821b-b003facb753f",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-007",
       "originalIndex": 6,
-      "chunkId": "c_1c93cc7d-728c-4264-87b5-121102b4430a",
-      "messageId": "5bc2cd60-b94b-483a-bd34-49fb04a61f90",
+      "chunkId": "c_9f3af1f4-2745-490c-b7bd-4b0d2f6d62f6",
+      "messageId": "0c522894-4a65-43a2-b9c5-430f3cae728a",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-008",
       "originalIndex": 7,
-      "chunkId": "c_568db9a5-0862-4553-a73c-d6b8a4f41a64",
-      "messageId": "ebc810c6-382b-444b-b64d-57c4f8ad4156",
+      "chunkId": "c_9047ae70-7029-47f6-b458-4b1895da8aa6",
+      "messageId": "68942fa7-2d1f-4db7-acc0-9f10374da841",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-009",
       "originalIndex": 8,
-      "chunkId": "c_2bdd3033-3762-4e82-bf01-98f73a4ce6e7",
-      "messageId": "fb3b04be-b08d-4939-8d3e-71abbd8ae81f",
+      "chunkId": "c_397ed5f2-bbb4-450f-838e-b8f71ccd2169",
+      "messageId": "30529f1c-0543-46d1-8b8c-5c85102b400a",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-010",
       "originalIndex": 9,
-      "chunkId": "c_6d261f11-0f4b-4682-a2f2-e1c32b2cb887",
-      "messageId": "1821e01e-95b5-46fe-acd9-28c7497d1801",
+      "chunkId": "c_c2704ff6-77f1-4c98-bac1-4df462ca4c91",
+      "messageId": "6f6a93c3-1d50-4a45-89f2-c44bb4df7359",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-011",
       "originalIndex": 10,
-      "chunkId": "c_593fa73a-1990-4469-b7a6-5e467e9bdc35",
-      "messageId": "2cdcd3ce-3afd-44de-ad06-a8e90b52f3e1",
+      "chunkId": "c_2d3a7280-5289-4c14-844a-cf4f0ae3a9fc",
+      "messageId": "32cd6c0c-2346-4b9b-88c9-ac2a63277f20",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-012",
       "originalIndex": 11,
-      "chunkId": "c_4f13f613-53c8-464c-b1bf-6f86269be4a2",
-      "messageId": "796310d4-5cb0-496c-9d07-308a66bab05b",
+      "chunkId": "c_2537f619-a0a5-4799-a155-a657959443e7",
+      "messageId": "80b738f9-4f88-4a3f-bbef-52f5c73a811c",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-013",
       "originalIndex": 12,
-      "chunkId": "c_a2678970-3bf2-4392-8ddc-4436acdea8ac",
-      "messageId": "5d18faa5-7f7a-4e9d-bab5-56157ddb7044",
+      "chunkId": "c_bff60a42-d29e-486d-a1c0-ded2a24f1b9c",
+      "messageId": "b3ae29de-2cb1-4a10-8a81-135efacd61f3",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-014",
       "originalIndex": 13,
-      "chunkId": "c_63b3a880-2637-4c3c-a86a-5fb82a5a17a9",
-      "messageId": "d89dde6f-e488-4a7b-80f4-3f81de37ede4",
+      "chunkId": "c_3f8b3856-fdfc-45b7-9bcc-f95744f9eaa8",
+      "messageId": "4ce9614f-dcb9-40c5-b3e9-c957ff5519eb",
       "status": "enqueued"
     },
     {
       "clientId": "chunk-015",
       "originalIndex": 14,
-      "chunkId": "c_4dccafc5-bf35-46a4-9b40-79aac284b918",
-      "messageId": "c965ded2-6ea0-466f-b677-18c21a467a3f",
+      "chunkId": "c_ab107c6a-4f5a-4f1a-a19a-52f999f6c126",
+      "messageId": "c12eb53f-fb51-4a7e-902e-29f05598f4e0",
       "status": "enqueued"
     }
   ],
   "errors": []
 }
-
-
-
-
-
-
-
-❯ curl -X POST "http://InfraS-ApiSe-2wSyfOnexjnF-1714920650.eu-west-1.elb.amazonaws.com/v1/embeddings" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "embeddings": [
-      {
-        "id": "embedding-001",
-        "docId": "doc-123",
-        "chunkIndex": 0,
-        "content": "This is the first chunk of content to be embedded.",
-        "embedding": [0.1, 0.2, 0.3, 0.4, 0.5]
-      },
-      {
-        "id": "embedding-002",
-        "docId": "doc-123",
-        "chunkIndex": 1,
-        "content": "This is the second chunk of content to be embedded.",
-        "embedding": [0.6, 0.7, 0.8, 0.9, 1.0]
-      }
-    ]
-  }' | jq
+❯ curl -v -X GET "http://InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com/v1/ingest/b_16ea69c6-06ab-44a3-9c74-e5ae35664510" \
+  -H "Content-Type: application/json" | jq
+Note: Unnecessary use of -X or --request, GET is already inferred.
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
-100   594  100   120  100   474    408   1613 --:--:-- --:--:-- --:--:--  2027
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Host InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com:80 was resolved.
+* IPv6: (none)
+* IPv4: 52.209.243.220, 54.76.222.30
+*   Trying 52.209.243.220:80...
+* Connected to InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com (52.209.243.220) port 80
+> GET /v1/ingest/b_16ea69c6-06ab-44a3-9c74-e5ae35664510 HTTP/1.1
+> Host: InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com
+> User-Agent: curl/8.7.1
+> Accept: */*
+> Content-Type: application/json
+>
+* Request completely sent off
+< HTTP/1.1 200 OK
+< Date: Tue, 28 Oct 2025 12:44:49 GMT
+< Content-Type: application/json; charset=utf-8
+< Content-Length: 3392
+< Connection: keep-alive
+< X-Powered-By: Express
+< ETag: W/"d40-D4WfG258q6dHqLEZLkVhzeDGXYQ"
+<
+{ [1103 bytes data]
+100  3392  100  3392    0     0  16843      0 --:--:-- --:--:-- --:--:-- 16792
+* Connection #0 to host InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com left intact
 {
-  "success": true,
-  "message": "Successfully created/updated 2 embeddings",
-  "count": 2,
-  "ids": [
-    "embedding-001",
-    "embedding-002"
-  ]
-}
-
-❯ curl -X GET "http://InfraS-ApiSe-2wSyfOnexjnF-1714920650.eu-west-1.elb.amazonaws.com/v1/embeddings?ids=embedding-001,embedding-002" | jq
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100   424  100   424    0     0   4341      0 --:--:-- --:--:-- --:--:--  4371
-{
-  "success": true,
-  "count": 2,
-  "embeddings": [
+  "batchId": "b_16ea69c6-06ab-44a3-9c74-e5ae35664510",
+  "status": "COMPLETED",
+  "totalChunks": 15,
+  "enqueuedChunks": 0,
+  "ingestedChunks": 15,
+  "failedChunks": 0,
+  "createdAt": "2025-10-28T12:44:13.204Z",
+  "completedAt": "2025-10-28T12:44:15.184Z",
+  "chunks": [
     {
-      "id": "embedding-002",
-      "docId": "doc-123",
-      "chunkIndex": 1,
-      "content": "This is the second chunk of content to be embedded.",
-      "embedding": [
-        0.6,
-        0.7,
-        0.8,
-        0.9,
-        1
-      ],
-      "createdAt": "2025-10-17T21:08:45.101Z"
+      "chunkId": "c_30a60bc3-e9e7-4685-bc4c-e6b3290590bb",
+      "chunkIndex": 0,
+      "clientId": "chunk-001",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:13.204Z",
+      "updatedAt": "2025-10-28T12:44:13.240Z"
     },
     {
-      "id": "embedding-001",
-      "docId": "doc-123",
-      "chunkIndex": 0,
-      "content": "This is the first chunk of content to be embedded.",
-      "embedding": [
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5
-      ],
-      "createdAt": "2025-10-17T21:08:45.101Z"
+      "chunkId": "c_b1d87aa1-8a05-4afa-8aab-83317858bb75",
+      "chunkIndex": 1,
+      "clientId": "chunk-002",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.147Z",
+      "updatedAt": "2025-10-28T12:44:15.184Z"
+    },
+    {
+      "chunkId": "c_0d073f37-53be-4b3b-94aa-9033ee9430f1",
+      "chunkIndex": 2,
+      "clientId": "chunk-003",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.113Z",
+      "updatedAt": "2025-10-28T12:44:15.180Z"
+    },
+    {
+      "chunkId": "c_4bb2ae56-3533-4f9f-932c-2474e6bd39bd",
+      "chunkIndex": 3,
+      "clientId": "chunk-004",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.113Z",
+      "updatedAt": "2025-10-28T12:44:15.180Z"
+    },
+    {
+      "chunkId": "c_392ac221-800d-4bd5-8f3c-b7d2d46d5be5",
+      "chunkIndex": 4,
+      "clientId": "chunk-005",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.109Z",
+      "updatedAt": "2025-10-28T12:44:15.140Z"
+    },
+    {
+      "chunkId": "c_79bc37d6-6b53-494c-a02c-1161dda47347",
+      "chunkIndex": 5,
+      "clientId": "chunk-006",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.109Z",
+      "updatedAt": "2025-10-28T12:44:15.140Z"
+    },
+    {
+      "chunkId": "c_9f3af1f4-2745-490c-b7bd-4b0d2f6d62f6",
+      "chunkIndex": 6,
+      "clientId": "chunk-007",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.109Z",
+      "updatedAt": "2025-10-28T12:44:15.140Z"
+    },
+    {
+      "chunkId": "c_9047ae70-7029-47f6-b458-4b1895da8aa6",
+      "chunkIndex": 7,
+      "clientId": "chunk-008",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.105Z",
+      "updatedAt": "2025-10-28T12:44:15.149Z"
+    },
+    {
+      "chunkId": "c_397ed5f2-bbb4-450f-838e-b8f71ccd2169",
+      "chunkIndex": 8,
+      "clientId": "chunk-009",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.147Z",
+      "updatedAt": "2025-10-28T12:44:15.184Z"
+    },
+    {
+      "chunkId": "c_c2704ff6-77f1-4c98-bac1-4df462ca4c91",
+      "chunkIndex": 9,
+      "clientId": "chunk-010",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.113Z",
+      "updatedAt": "2025-10-28T12:44:15.180Z"
+    },
+    {
+      "chunkId": "c_2d3a7280-5289-4c14-844a-cf4f0ae3a9fc",
+      "chunkIndex": 10,
+      "clientId": "chunk-011",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.109Z",
+      "updatedAt": "2025-10-28T12:44:15.140Z"
+    },
+    {
+      "chunkId": "c_2537f619-a0a5-4799-a155-a657959443e7",
+      "chunkIndex": 11,
+      "clientId": "chunk-012",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.105Z",
+      "updatedAt": "2025-10-28T12:44:15.149Z"
+    },
+    {
+      "chunkId": "c_bff60a42-d29e-486d-a1c0-ded2a24f1b9c",
+      "chunkIndex": 12,
+      "clientId": "chunk-013",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.105Z",
+      "updatedAt": "2025-10-28T12:44:15.149Z"
+    },
+    {
+      "chunkId": "c_3f8b3856-fdfc-45b7-9bcc-f95744f9eaa8",
+      "chunkIndex": 13,
+      "clientId": "chunk-014",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.109Z",
+      "updatedAt": "2025-10-28T12:44:15.140Z"
+    },
+    {
+      "chunkId": "c_ab107c6a-4f5a-4f1a-a19a-52f999f6c126",
+      "chunkIndex": 14,
+      "clientId": "chunk-015",
+      "status": "INGESTED",
+      "failureReason": null,
+      "createdAt": "2025-10-28T12:44:15.147Z",
+      "updatedAt": "2025-10-28T12:44:15.184Z"
     }
   ]
 }
 
-
-
-❯ node scripts/ingest_jsonl.js \
-  --file ~/Downloads/Amazon_Reviews_Short.jsonl \
-  --endpoint http://InfraS-ApiSe-CDIDTV454OWM-1685510846.eu-west-1.elb.amazonaws.com/v1/ingest \
-  --batch 50 \
-  --concurrency 8 \
-  --retries 1 \
-  --timeout-ms 60000 \
-  --max-chars 8000 \
-  --log-every 100
-
-
-
-
-
-
-❯ curl -X POST http://InfraS-ApiSe-CDIDTV454OWM-1685510846.eu-west-1.elb.amazonaws.com/v1/query \
+❯ curl -X POST http://InfraS-ApiSe-tpWHGCCNPCHs-1991277559.eu-west-1.elb.amazonaws.com/v1/query \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "what do you know about mini farm animals?",
+    "query": "what toy cars are surprisingly dangerous?",
     "limit": 5,
     "threshold": 0.7
   }' | jq
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
-100  2333  100  2233  100   100    627     28  0:00:03  0:00:03 --:--:--   656
+100  5340  100  5240  100   100   1911     36  0:00:02  0:00:02 --:--:--  1947
 {
-  "query": "what do you know about mini farm animals?",
-  "answer": "Based on the provided context, the mini farm animals are a toy product manufactured by U.S. Toy. Customers have purchased them for various purposes such as using them as party favors at a birthday party. Reviews indicate that some customers found the mini farm animals to be \"super cute,\" while others were disappointed with the quality and mentioned finding similar items elsewhere for a lower price.",
+  "query": "what toy cars are surprisingly dangerous?",
+  "answer": "The Fisher Price Nesting Action Vehicles mentioned in one of the reviews are noted to have paint that comes off easily, which could be dangerous for babies who put objects in their mouths. This can pose a choking hazard, making them surprisingly dangerous for young children.",
   "context": [
     {
-      "id": "c_bb4be0f3-f793-4289-93b7-1d192c665268",
-      "docId": "B01HIXSU4O_ANYBW921YS9S7_1512259200",
+      "id": "c_7a3ed0a7-980b-4d01-89a7-03b3ff799916",
+      "docId": "b_01ec27d2-3af8-4a3f-8446-3390b5d4a44b",
       "chunkIndex": 0,
-      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 1 stars (Verified Purchase) Review Summary: With a better paint job on them Full Review: Not at all what I expected. Found identical item in the dollar store. With a better paint job on them. There is no return on this item!",
-      "distance": 0.48845053968291785
+      "content": "Product: Fisher Price Nesting Action Vehicles (Brand: Fisher-Price) Category: Toys & Games Rating: 5 stars Review Summary: They Take a Beating and Keep on Beeping! Full Review: Okay, well they don't really beep. (But my 11-month old son loves when we roll these along and SAY \"beep beep!\") At this point, my son's favorite aspect of these cars is the little sunroof, siren and ladder on the tops. He can sit there for ten minutes just flipping the sunroof back and forth! Go figure! These cars are super sturdy and have taken quite a beating on our coffee table. (They're in much better shape than the coffee table at this point.) I love that they nest together so they don't take up too much space when they're put away. I also like that he can grow into them once he understands the nesting/stacking part better. A great toy...gets played with each and every day!",
+      "distance": 0.5307765639753981
     },
     {
-      "id": "c_b19f315f-4a1a-4100-8b05-d4b58c316fbb",
-      "docId": "B01HIXSU4O_ANYBW921YS9S7_1512259200",
-      "chunkIndex": 2,
-      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 1 stars (Verified Purchase) Review Summary: With a better paint job on them Full Review: Not at all what I expected. Found identical item in the dollar store. With a better paint job on them. There is no return on this item!",
-      "distance": 0.48855149609464
+      "id": "c_2f5d01b0-6db5-495d-945d-b94dfeda2912",
+      "docId": "b_01ec27d2-3af8-4a3f-8446-3390b5d4a44b",
+      "chunkIndex": 33,
+      "content": "Product: Fisher Price Nesting Action Vehicles (Brand: Fisher-Price) Category: Toys & Games Rating: 2 stars Review Summary: My 9-month-old showed no interest in this toy Full Review: I thought this was a cute idea. Perhaps my baby is too young for this toy at 9 months, but she showed no interest in this toy whatsoever. After 2 weeks of ignoring this toy, I returned it to the store. The car on top never stayed there, it seemed to fall off the top way too easily. These seem cheap and are hollowed out cars that do not roll well at all when compared to the other Fisher Price cars for babies. The paint comes off easily, which seems very dangerous for babies, who put everything into there mouths! I can not recommend this toy.",
+      "distance": 0.5381434330004624
     },
     {
-      "id": "c_0e2eb87c-a469-453d-a94f-d6367e9f840f",
-      "docId": "B01HIXSU4O_A24WCALKWI4JB1_1509321600",
-      "chunkIndex": 3,
-      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 5 stars (Verified Purchase) Review Summary: Super cute! Full Review: I put these in clear soasp and gave out as party favors at my daughters birthday party. Super cute!!!",
-      "distance": 0.4973796010017252
+      "id": "c_ad0d3f5f-fea3-468e-907e-50e32fd73924",
+      "docId": "b_b9e7d8a4-cfef-4e75-afab-f70d7ebb1a40",
+      "chunkIndex": 48,
+      "content": "Product: Fisher Price Nesting Action Vehicles (Brand: Fisher-Price) Category: Toys & Games Rating: 5 stars Review Summary: MY six-month-old Loves his cars! Full Review: This is a wonderful toy that is fun, educational, and affordable! The cars are different colors, and each has a different number, 1 - 4, to help a child learn counting and colors. They also stack on top of each other and nest inside of each other.(The nesting feature is great for storage too). Each car has a neat fun feature for little ones to explore (e.g., the small car is also a rattle, the large fire truck's ladder moves, etc.) The cars are also very sturdy (as has been proven by my son repeatedly banging them together,) and they are easy for little hands to grab onto. At 6 months of age, my son really enjoys looking at the toys, passing them from one hand to the other, banging them together, and, of course, putting them in his mouth. I imagine this toy will remain one of my son's favorites as he learns to stack them and roll them on the floor. I would highly recommend this item.",
+      "distance": 0.5494934379450573
     },
     {
-      "id": "c_27b5d17f-f57d-4013-9c9a-6b4baffdaae2",
-      "docId": "B01HIXSU4O_A24WCALKWI4JB1_1509321600",
-      "chunkIndex": 2,
-      "content": "Product: Mini Farm Animals (1 Dozen) (Brand: U.S. Toy) Category: Toys & Games Rating: 5 stars (Verified Purchase) Review Summary: Super cute! Full Review: I put these in clear soasp and gave out as party favors at my daughters birthday party. Super cute!!!",
-      "distance": 0.4973796010017252
+      "id": "c_cc159978-c3ff-4c97-bf1b-929e2f900daf",
+      "docId": "b_b9e7d8a4-cfef-4e75-afab-f70d7ebb1a40",
+      "chunkIndex": 36,
+      "content": "Product: Fisher Price Nesting Action Vehicles (Brand: Fisher-Price) Category: Toys & Games Rating: 4 stars Review Summary: Really cute! Full Review: Really cute cars that store in one another. The only issue is that the baby wants to put them in his mouth and they are too bulky and hard so he gets frustrated with them. Great colors and really cute from an adult standpoint.",
+      "distance": 0.5533494150667329
+    },
+    {
+      "id": "c_ee246734-e94c-4901-8c99-591c546eb82f",
+      "docId": "b_01ec27d2-3af8-4a3f-8446-3390b5d4a44b",
+      "chunkIndex": 1,
+      "content": "Product: Fisher Price Nesting Action Vehicles (Brand: Fisher-Price) Category: Toys & Games Rating: 5 stars Review Summary: My 6 month old loves his cars! Full Review: This is a wonderful toy that is fun, educational, and affordable! The cars are different colors, and each has a different number, 1 - 4, to help a child learn counting and colors. They also stack on top of each other and nest inside of each other.(The nesting feature is great for storage too). Each car has a neat fun feature for little ones to explore (e.g., the small car is also a rattle, the large fire truck's ladder moves, etc.) The cars are also very sturdy (as has been proven by my son repeatedly banging them together,) and they are easy for little hands to grab onto. At 6 months of age, my son really enjoys looking at the toys, passing them from one hand to the other, banging them together, and, of course, putting them in his mouth. I imagine this toy will remain one of my son's favorites as he learns to stack them and roll them on the floor. I would highly recommend this item.",
+      "distance": 0.5540203782332098
     }
   ],
-  "matches": 4
+  "matches": 5
 }

@@ -2,7 +2,6 @@ import { logger } from "./logger.js";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
-import crypto from "crypto";
 
 export type Payload = {
   chunkId: string;
@@ -11,6 +10,8 @@ export type Payload = {
   metadata: Record<string, any>;
   batchId: string;
   enqueuedAt: string;
+  contentHash: string;
+  originalIndex: number;
 };
 
 let prismaClient: PrismaClient | null = null;
@@ -96,22 +97,45 @@ async function getOpenAIClient(): Promise<OpenAI> {
   return openaiClient;
 }
 
-function generateContentHash(content: string): string {
-  return crypto.createHash('sha256').update(content).digest('hex');
+/**
+ * Gracefully close all client connections
+ */
+export async function closeClients(): Promise<void> {
+  const closePromises: Promise<void>[] = [];
+
+  if (prismaClient) {
+    closePromises.push(
+      prismaClient.$disconnect().then(() => {
+        logger.info("Prisma client disconnected");
+        prismaClient = null;
+      }).catch((error: any) => {
+        logger.error({ error }, "Failed to disconnect Prisma client");
+      })
+    );
+  }
+
+  // OpenAI client doesn't need explicit cleanup, but we can reset the reference
+  if (openaiClient) {
+    openaiClient = null;
+    logger.info("OpenAI client reference cleared");
+  }
+
+  await Promise.all(closePromises);
 }
 
-async function generateEmbedding(content: string): Promise<number[]> {
+
+async function generateEmbeddings(contents: string[]): Promise<number[][]> {
   const openai = await getOpenAIClient();
 
   try {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: content,
+      input: contents,
     });
 
-    return response.data[0].embedding;
+    return response.data.map(item => item.embedding);
   } catch (error) {
-    logger.error({ error, content: content.substring(0, 100) }, "Failed to generate embedding");
+    logger.error({ error, contentCount: contents.length }, "Failed to generate embeddings batch");
     throw error;
   }
 }
@@ -130,97 +154,222 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
   const results: ProcessedRecord[] = [];
 
   try {
-    // Generate embeddings for all records in parallel
-    logger.info({ recordCount: records.length }, "Generating embeddings for batch");
-
-    const embeddingPromises = records.map(async (record, index) => {
+    // Pre-process all records using pre-computed contentHash from API
+    const processedRecords = records.map(record => {
       const content = typeof record.payload.content === 'string'
         ? record.payload.content
         : JSON.stringify(record.payload.content);
 
-      // Generate content hash for idempotency
-      const contentHash = generateContentHash(content);
-
-      // Generate embedding using OpenAI
-      const embedding = await generateEmbedding(content);
+      const chunkId = record.payload.chunkId;
+      const contentHash = record.payload.contentHash; // Use pre-computed hash from API
 
       return {
-        id: record.payload.chunkId || record.messageId,
-        docId: record.payload.clientId, // Use clientId as docId
-        chunkIndex: index, // Simple auto-increment for each record in the batch
-        content: content,
-        contentHash: contentHash,
-        embedding: embedding,
+        ...record,
+        processedContent: content,
+        chunkId,
+        contentHash
       };
     });
 
-    // Wait for all embeddings to be generated
-    const embeddingData = await Promise.all(embeddingPromises);
+    // Phase 1: Insert chunks and placeholder embeddings (short transaction)
+    logger.info({ recordCount: records.length }, "Phase 1: Inserting chunks and placeholder embeddings");
 
-    // Log all record fields before database insert
+    const contentHashes = processedRecords.map(record => record.contentHash);
+    const chunkIds = processedRecords.map(record => record.chunkId);
+    const batchIds = processedRecords.map(record => record.payload.batchId);
+    const clientIds = processedRecords.map(record => record.payload.clientId);
+    const chunkIndexes = processedRecords.map(record => record.payload.originalIndex);
+    const contents = processedRecords.map(record => record.processedContent);
+
+    await prisma.$transaction(async (tx: any) => {
+      // Insert placeholder embeddings first (required for FK)
+      await tx.$executeRaw`
+        INSERT INTO "Embedding" ("contentHash", embedding, "createdAt")
+        SELECT
+          unnest(${contentHashes}::text[]) as "contentHash",
+          NULL as embedding,
+          NOW() as "createdAt"
+        ON CONFLICT ("contentHash") DO NOTHING
+      `;
+
+      // Insert chunks with ENQUEUED status
+      await tx.$executeRaw`
+        INSERT INTO "Chunk" (id, "contentHash", "batchId", "clientId", "chunkIndex", content, status, "createdAt", "updatedAt")
+        SELECT
+          unnest(${chunkIds}::text[]) as id,
+          unnest(${contentHashes}::text[]) as "contentHash",
+          unnest(${batchIds}::text[]) as "batchId",
+          unnest(${clientIds}::text[]) as "clientId",
+          unnest(${chunkIndexes}::int[]) as "chunkIndex",
+          unnest(${contents}::text[]) as content,
+          'ENQUEUED' as status,
+          NOW() as "createdAt",
+          NOW() as "updatedAt"
+        ON CONFLICT ("contentHash", "batchId") DO NOTHING
+      `;
+    });
+
+    logger.info({ recordCount: processedRecords.length }, "Batch inserted chunks and placeholder embeddings");
+
+    // Phase 2: Check which embeddings need computation (outside transaction)
+    logger.info({ contentHashes }, "Phase 2: Checking which embeddings need computation");
+
+    const existingEmbeddings = await prisma.$queryRaw<Array<{ contentHash: string; embedding: any }>>`
+      SELECT "contentHash", embedding::text as embedding FROM "Embedding"
+      WHERE "contentHash" = ANY(${contentHashes}) AND embedding IS NOT NULL
+    `;
+
+    const existingContentHashes = new Set(
+      existingEmbeddings.map((record: { contentHash: string }) => record.contentHash)
+    );
+
+    const recordsToProcess = processedRecords.filter(record =>
+      !existingContentHashes.has(record.contentHash)
+    );
+
     logger.info({
-      recordCount: embeddingData.length,
-      records: embeddingData.map((data, index) => ({
-        index,
-        id: data.id,
-        docId: data.docId,
-        chunkIndex: data.chunkIndex,
-        contentHash: data.contentHash,
-        contentLength: data.content.length,
-        embeddingLength: data.embedding.length,
-        contentPreview: data.content.substring(0, 100) + (data.content.length > 100 ? '...' : ''),
-        embeddingPreview: data.embedding.slice(0, 5) // Show first 5 embedding values
-      }))
-    }, "About to insert records into database");
+      totalRecords: records.length,
+      alreadyIngested: existingContentHashes.size,
+      needProcessing: recordsToProcess.length
+    }, "Processing status analysis");
 
-    // Insert all records using raw SQL with idempotency via contentHash unique constraint
-    for (const data of embeddingData) {
-      // Format the embedding array as a PostgreSQL vector literal
-      // pgvector expects format: [1,2,3] or [1.0,2.0,3.0]
-      const embeddingString = `[${data.embedding.join(',')}]`;
+    // Phase 3: Generate embeddings for new content (if needed)
+    let embeddings: number[][] | null = null;
+
+    if (recordsToProcess.length > 0) {
+      logger.info({
+        recordsToProcess: recordsToProcess.length,
+        skippedRecords: records.length - recordsToProcess.length
+      }, "Phase 3: Generating embeddings for new content");
 
       try {
-        // Validate embedding data before insertion
-        if (!data.embedding || !Array.isArray(data.embedding) || data.embedding.length === 0) {
-          throw new Error(`Invalid embedding data: ${JSON.stringify(data.embedding)}`);
+        // Prepare all contents for batch embedding generation
+        const contents = recordsToProcess.map(record => record.processedContent);
+
+        logger.info({ contentCount: contents.length }, "Generating embeddings batch");
+        embeddings = await generateEmbeddings(contents);
+
+        // Validate embeddings batch
+        if (!embeddings || embeddings.length !== contents.length) {
+          throw new Error(`Embedding batch size mismatch: expected ${contents.length}, got ${embeddings?.length || 0}`);
         }
 
-        // Check for NaN or invalid values in embedding
-        const hasInvalidValues = data.embedding.some(val => !Number.isFinite(val));
-        if (hasInvalidValues) {
-          throw new Error(`Embedding contains invalid values: ${data.embedding.slice(0, 10)}`);
+        // Validate all embeddings first
+        for (let i = 0; i < embeddings.length; i++) {
+          const embedding = embeddings[i];
+          const chunkId = recordsToProcess[i].chunkId;
+
+          if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
+            throw new Error(`Invalid embedding data for chunk ${chunkId}: ${JSON.stringify(embedding)}`);
+          }
+
+          const hasInvalidValues = embedding.some(val => !Number.isFinite(val));
+          if (hasInvalidValues) {
+            throw new Error(`Embedding contains invalid values for chunk ${chunkId}: ${embedding.slice(0, 10)}`);
+          }
         }
 
-        logger.info({
-          id: data.id,
-          contentHash: data.contentHash,
-          embeddingString: embeddingString.substring(0, 100) + '...',
-          embeddingLength: data.embedding.length,
-          firstFewValues: data.embedding.slice(0, 5),
-          lastFewValues: data.embedding.slice(-5)
-        }, "Inserting embedding with formatted string");
+        logger.info({ generatedCount: embeddings.length }, "Embeddings generated successfully");
 
-        await prisma.$executeRaw`
-          INSERT INTO "Embedding" (id, "docId", "chunkIndex", content, "contentHash", embedding, "createdAt", "updatedAt")
-          VALUES (${data.id}, ${data.docId}, ${data.chunkIndex}, ${data.content}, ${data.contentHash}, ${embeddingString}::vector, NOW(), NOW())
-          ON CONFLICT ("contentHash") DO NOTHING
-        `;
-        logger.info({ id: data.id, contentHash: data.contentHash }, "Successfully processed embedding (inserted or skipped due to existing content)");
-      } catch (insertError) {
-        logger.error({
-          id: data.id,
-          contentHash: data.contentHash,
-          error: insertError,
-          embeddingLength: data.embedding.length,
-          contentLength: data.content.length,
-          embeddingString: embeddingString.substring(0, 100) + '...'
-        }, "Failed to insert embedding");
-        throw insertError; // Re-throw to trigger the outer catch block
+      } catch (embeddingError) {
+        logger.error({ error: embeddingError, recordCount: recordsToProcess.length }, "Embedding generation failed - marking chunks as FAILED");
+
+        // Update failed chunks (short transaction)
+        const failedChunkIds = recordsToProcess.map(record => record.chunkId);
+        try {
+          await prisma.$executeRaw`
+            UPDATE "Chunk"
+            SET status = 'FAILED', "failureReason" = 'COMPUTE_EMBEDDINGS_FAILURE', "updatedAt" = NOW()
+            WHERE id = ANY(${failedChunkIds})
+          `;
+        } catch (updateError) {
+          logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
+        }
+
+        // Add failed results
+        recordsToProcess.forEach(record => {
+          results.push({
+            messageId: record.messageId,
+            payload: record.payload,
+            success: false,
+            error: embeddingError instanceof Error ? embeddingError.message : 'Embedding generation failed',
+          });
+        });
+
+        return results;
       }
+    } else {
+      logger.info({ recordCount: records.length }, "All embeddings already exist, skipping generation");
     }
 
-    // All records succeeded
-    records.forEach(record => {
+    // Phase 4: Update database (embeddings + chunk status)
+    logger.info({
+      recordCount: records.length,
+      hasNewEmbeddings: embeddings !== null
+    }, "Phase 4: Updating database");
+
+    try {
+      await prisma.$transaction(async (tx: any) => {
+        // Update embeddings if we generated new ones
+        if (embeddings && recordsToProcess.length > 0) {
+          const contentHashes = recordsToProcess.map(record => record.contentHash);
+          const embeddingStrings = embeddings.map(embedding => `[${embedding.join(',')}]`);
+
+          // Use subquery with unnest - avoids the UPDATE restriction
+          await tx.$executeRaw`
+            UPDATE "Embedding"
+            SET embedding = subq.embedding
+            FROM (
+              SELECT
+                unnest(${contentHashes}::text[]) as "contentHash",
+                unnest(${embeddingStrings}::vector[]) as embedding
+            ) AS subq
+            WHERE "Embedding"."contentHash" = subq."contentHash"
+          `;
+
+          logger.info({ updatedEmbeddings: recordsToProcess.length }, "Updated embeddings");
+        }
+
+        // Update all chunks to INGESTED status
+        await tx.$executeRaw`
+          UPDATE "Chunk"
+          SET status = 'INGESTED', "updatedAt" = NOW()
+          WHERE "contentHash" = ANY(${contentHashes})
+        `;
+      });
+
+      logger.info({ updatedCount: contentHashes.length }, "Batch updated chunk status to INGESTED");
+
+    } catch (dbError) {
+      logger.error({ error: dbError, recordCount: records.length }, "Database update failed - marking chunks as FAILED");
+
+      // Update failed chunks (short transaction)
+      const failedChunkIds = processedRecords.map(record => record.chunkId);
+      try {
+        await prisma.$executeRaw`
+          UPDATE "Chunk"
+          SET status = 'FAILED', "failureReason" = 'DATA_LAYER_FAILURE', "updatedAt" = NOW()
+          WHERE id = ANY(${failedChunkIds})
+        `;
+      } catch (updateError) {
+        logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
+      }
+
+      // Add failed results
+      records.forEach(record => {
+        results.push({
+          messageId: record.messageId,
+          payload: record.payload,
+          success: false,
+          error: dbError instanceof Error ? dbError.message : 'Database update failed',
+        });
+      });
+
+      return results;
+    }
+
+    // Add successful results for all records
+    processedRecords.forEach(record => {
       results.push({
         messageId: record.messageId,
         payload: record.payload,
@@ -230,19 +379,20 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
 
     logger.info({
       recordCount: records.length,
-      successCount: results.length
-    }, "Successfully processed batch");
+      successCount: results.length,
+      failed: results.filter(r => !r.success).length
+    }, "Batch processing completed");
 
   } catch (error) {
-    logger.error({ error, recordCount: records.length }, "Batch processing failed - marking all records as failed");
+    logger.error({ error, recordCount: records.length }, "Critical batch processing failure - marking all records as failed");
 
-    // If the transaction fails, mark all records as failed
+    // If critical failure (database connection, etc.), mark all records as failed
     records.forEach(record => {
       results.push({
         messageId: record.messageId,
         payload: record.payload,
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: error instanceof Error ? error.message : 'Critical processing failure',
       });
     });
   }
