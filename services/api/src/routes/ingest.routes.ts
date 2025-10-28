@@ -5,6 +5,7 @@ import { IngestRequest, IngestResponse, IngestSummary } from "../types/ingest.ty
 import { BatchStatusResponse, ChunkStatusInfo, ChunkStatus, FailureReason } from "../types/status.types";
 import { createValidationMiddleware, sendValidationError } from "../middleware/validation";
 import { IngestValidators } from "../middleware/ingestValidation";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -61,7 +62,7 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
   }
 
   try {
-    req.logger.info({
+    logger.info({
       recordCount: records.length,
       idempotencyKey
     }, "Processing ingest request");
@@ -92,7 +93,7 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
     };
 
     const totalDuration = Date.now() - requestStartTime;
-    req.logger.info({
+    logger.info({
       batchId,
       duration: totalDuration,
       summary
@@ -103,7 +104,7 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
     res.status(status).json(response);
   } catch (error: any) {
     const totalDuration = Date.now() - requestStartTime;
-    req.logger.error({
+    logger.error({
       duration: totalDuration,
       error: error.message ?? String(error)
     }, "Ingest API failed");
@@ -122,7 +123,7 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
 router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
   try {
     const { batchId } = req.params;
-    req.logger.info({ batchId }, "Checking batch status");
+    logger.info({ batchId }, "Checking batch status");
 
     // Validate batch ID
     const validationResult = IngestValidators.validateBatchId(batchId);
@@ -200,7 +201,7 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     res.json(response);
 
   } catch (error: any) {
-    req.logger.error({
+    logger.error({
       batchId: req.params.batchId,
       error: error.message ?? String(error)
     }, "Status check failed");

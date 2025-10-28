@@ -4,6 +4,7 @@ import { openaiService } from "../services/openai.service";
 import { QueryRequest, QueryResponse, ContextChunk } from "../types/query.types";
 import { createValidationMiddleware } from "../middleware/validation";
 import { QueryValidators } from "../middleware/queryValidation";
+import { logger } from "../lib/logger";
 
 const router = Router();
 
@@ -14,14 +15,14 @@ const router = Router();
 router.post("/v1/query", createValidationMiddleware(QueryValidators.validateQueryRequest), async (req: Request, res: Response) => {
   try {
     const { query, limit = 5, threshold = 0.7 } = req.body as QueryRequest;
-    req.logger.info({ query, limit, threshold }, "Processing query request");
+    logger.info({ query, limit, threshold }, "Processing query request");
 
     // 1. Generate embedding for the query
-    req.logger.info("Generating embedding for query");
+    logger.info("Generating embedding for query");
     const queryEmbedding = await openaiService.generateEmbedding(query);
 
     // 2. Find similar embeddings using vector search
-    req.logger.info("Searching for similar embeddings");
+    logger.info("Searching for similar embeddings");
     const searchResult = await prismaService.findSimilarEmbeddings(
       queryEmbedding,
       limit,
@@ -50,7 +51,7 @@ router.post("/v1/query", createValidationMiddleware(QueryValidators.validateQuer
       .join('\n\n');
 
     // 4. Generate completion using OpenAI
-    req.logger.info("Generating completion");
+    logger.info("Generating completion");
     const answer = await openaiService.generateCompletion(context, query);
 
     // 5. Format response
@@ -70,7 +71,7 @@ router.post("/v1/query", createValidationMiddleware(QueryValidators.validateQuer
     res.json(response);
 
   } catch (error: any) {
-    req.logger.error({
+    logger.error({
       error: error.message ?? String(error)
     }, "Query processing failed");
     res.status(500).json({

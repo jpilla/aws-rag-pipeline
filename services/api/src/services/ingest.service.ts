@@ -9,6 +9,7 @@ import {
   IngestError,
 } from "../types/ingest.types";
 import { prismaService } from "./prisma.service";
+import { logger } from "../lib/logger";
 
 /**
  * Service for handling data ingestion to SQS queue
@@ -45,9 +46,9 @@ export class IngestService {
       );
 
       this.isInitialized = true;
-      console.log(`SQS client initialized for queue: ${this.queueUrl}`);
+      logger.info({ queueUrl: this.queueUrl }, "SQS client initialized");
     } catch (error) {
-      console.error("Failed to initialize SQS client:", error);
+      logger.error({ error }, "Failed to initialize SQS client");
       throw new Error(`SQS client initialization failed: ${error}`);
     }
   }
@@ -295,7 +296,7 @@ export class IngestService {
     if (idempotencyKey) {
       const existingBatch = await this.getExistingBatch(idempotencyKey);
       if (existingBatch) {
-        console.log(`Returning existing batch ${existingBatch.batchId} for idempotency key ${idempotencyKey}`);
+        logger.info({ batchId: existingBatch.batchId, idempotencyKey }, "Returning existing batch for idempotency key");
         return existingBatch;
       }
     }
@@ -308,7 +309,7 @@ export class IngestService {
     // Deduplicate records within the batch based on content hash
     const deduplicatedRecords = this.deduplicateRecords(preprocessedRecords);
 
-    console.log(`Starting ingest for batch ${batchId} with ${records.length} records (${deduplicatedRecords.length} after deduplication)`);
+    logger.info({ batchId, totalRecords: records.length, deduplicatedRecords: deduplicatedRecords.length }, "Starting ingest for batch");
 
     const { results, errors } = await this.processRecords(deduplicatedRecords, batchId, requestId);
 
@@ -318,7 +319,7 @@ export class IngestService {
     }
 
     const duration = Date.now() - startTime;
-    console.log(`Completed ingest for batch ${batchId} in ${duration}ms - ${results.length} successful, ${errors.length} failed`);
+    logger.info({ batchId, duration, successful: results.length, failed: errors.length }, "Completed ingest for batch");
 
     return { batchId, results, errors };
   }
@@ -380,7 +381,7 @@ export class IngestService {
         errors
       };
     } catch (error) {
-      console.error("Failed to get existing batch:", error);
+      logger.error({ error }, "Failed to get existing batch");
       return null;
     }
   }
@@ -392,7 +393,7 @@ export class IngestService {
     try {
       await prismaService.storeIdempotencyKey(idempotencyKey, batchId);
     } catch (error) {
-      console.error("Failed to store idempotency mapping:", error);
+      logger.error({ error }, "Failed to store idempotency mapping");
       // Don't throw - this is not critical for the main flow
     }
   }

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { logger } from '../lib/logger';
 
 /**
  * Service for OpenAI operations including embeddings and completions
@@ -17,7 +18,7 @@ export class OpenAIService {
       }
 
       this.client = new OpenAI({ apiKey });
-      console.log('OpenAI client initialized');
+      logger.info('OpenAI client initialized');
     }
     return this.client;
   }
@@ -34,7 +35,7 @@ export class OpenAIService {
       });
       return response.data[0].embedding;
     } catch (error: any) {
-      console.error("Failed to generate embedding:", error);
+      logger.error({ error }, "Failed to generate embedding");
       throw new Error(`OpenAI embedding generation failed: ${error.message}`);
     }
   }
@@ -63,7 +64,7 @@ export class OpenAIService {
 
       return response.choices[0].message.content || '';
     } catch (error: any) {
-      console.error("Failed to generate completion:", error);
+      logger.error({ error }, "Failed to generate completion");
       throw new Error(`OpenAI completion generation failed: ${error.message}`);
     }
   }
