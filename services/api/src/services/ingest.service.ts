@@ -1,4 +1,4 @@
-import { SQSClient, SendMessageBatchCommand } from "@aws-sdk/client-sqs";
+import { SQSClient, SendMessageBatchCommand, GetQueueAttributesCommand, SendMessageBatchCommandOutput, GetQueueAttributesCommandOutput, SendMessageBatchResultEntry, BatchResultErrorEntry } from "@aws-sdk/client-sqs";
 import crypto from "crypto";
 import {
   IngestRecord,
@@ -8,23 +8,46 @@ import {
   IngestResult,
   IngestError,
 } from "../types/ingest.types";
-import { prismaService } from "./prisma.service";
 import { logger } from "../lib/logger";
+import { PrismaDatabaseAdapter } from './adapters/database.adapter';
+import { AwsSqsAdapter } from './adapters/sqs.adapter';
+
+export interface ChunkData {
+  id: string;
+  clientId: string;
+  chunkIndex: number;
+  status: 'ENQUEUED' | 'INGESTED' | 'FAILED';
+  failureReason?: string;
+}
+
+export interface DatabaseService {
+  getBatchByKey(idempotencyKey: string): Promise<{ success: boolean; batchId?: string }>;
+  getChunksByBatchId(batchId: string): Promise<{ success: boolean; chunks?: ChunkData[] }>;
+  storeIdempotencyKey(idempotencyKey: string, batchId: string): Promise<void>;
+}
+
+export interface SqsService {
+  sendMessageBatch(command: SendMessageBatchCommand): Promise<SendMessageBatchCommandOutput>;
+  getQueueAttributes(command: GetQueueAttributesCommand): Promise<GetQueueAttributesCommandOutput>;
+}
 
 /**
  * Service for handling data ingestion to SQS queue
  */
 export class IngestService {
-  private sqsClient: SQSClient;
+  private sqsService: SqsService;
+  private databaseService: DatabaseService;
   private queueUrl: string;
   private isInitialized: boolean = false;
 
-  constructor(queueUrl: string, region: string = "us-east-1") {
+  constructor(
+    queueUrl: string,
+    databaseService: DatabaseService,
+    sqsService: SqsService
+  ) {
     this.queueUrl = queueUrl;
-    this.sqsClient = new SQSClient({
-      region,
-      maxAttempts: 3,
-    });
+    this.databaseService = databaseService;
+    this.sqsService = sqsService;
   }
 
   /**
@@ -38,7 +61,7 @@ export class IngestService {
     try {
       // Test SQS connectivity by getting queue attributes
       const { GetQueueAttributesCommand } = await import("@aws-sdk/client-sqs");
-      await this.sqsClient.send(
+      await this.sqsService.getQueueAttributes(
         new GetQueueAttributesCommand({
           QueueUrl: this.queueUrl,
           AttributeNames: ["QueueArn"]
@@ -56,7 +79,7 @@ export class IngestService {
   /**
    * Validates that records array is present and non-empty
    */
-  validateRecords(records: any): records is IngestRecord[] {
+  validateRecords(records: unknown): records is IngestRecord[] {
     return Array.isArray(records) && records.length > 0;
   }
 
@@ -185,55 +208,74 @@ export class IngestService {
     results: IngestResult[];
     errors: IngestError[];
   }> {
+    try {
+      const response = await this.sendBatchToSqs(entries);
+      return this.processSqsResponse(response, entries);
+    } catch (error: unknown) {
+      return this.handleBatchFailure(entries, error);
+    }
+  }
+
+  private async sendBatchToSqs(entries: QueueEntry[]) {
+    return this.sqsService.sendMessageBatch(
+      new SendMessageBatchCommand({
+        QueueUrl: this.queueUrl,
+        Entries: entries,
+      })
+    );
+  }
+
+  private processSqsResponse(response: SendMessageBatchCommandOutput, entries: QueueEntry[]): { results: IngestResult[]; errors: IngestError[] } {
     const results: IngestResult[] = [];
     const errors: IngestError[] = [];
 
-    try {
-      const response = await this.sqsClient.send(
-        new SendMessageBatchCommand({
-          QueueUrl: this.queueUrl,
-          Entries: entries,
-        })
-      );
-
-      // Process successful messages
-      response.Successful?.forEach((success) => {
-        const entry = entries.find((e) => e.Id === success.Id)!;
-        results.push({
-          clientId: entry._meta.clientId,
-          originalIndex: entry._meta.idx,
-          chunkId: entry._meta.chunkId,
-          status: "enqueued",
-        });
-      });
-
-      // Process failed messages
-      response.Failed?.forEach((failure) => {
-        const entry = entries.find((e) => e.Id === failure.Id)!;
-        errors.push({
-          clientId: entry._meta.clientId,
-          originalIndex: entry._meta.idx,
-          chunkId: entry._meta.chunkId,
-          status: "rejected",
-          code: this.sanitizeErrorCode(failure.Code!),
-          message: this.sanitizeErrorMessage(failure.Message!),
-        });
-      });
-    } catch (error: any) {
-      // If entire batch fails, mark all entries as errors
-      entries.forEach((entry) => {
-        errors.push({
-          clientId: entry._meta.clientId,
-          originalIndex: entry._meta.idx,
-          chunkId: entry._meta.chunkId,
-          status: "rejected",
-          code: "BATCH_ERROR",
-          message: this.sanitizeErrorMessage(error.message ?? String(error)),
-        });
-      });
-    }
+    this.processSuccessfulMessages(response.Successful || [], entries, results);
+    this.processFailedMessages(response.Failed || [], entries, errors);
 
     return { results, errors };
+  }
+
+  private processSuccessfulMessages(successful: SendMessageBatchResultEntry[], entries: QueueEntry[], results: IngestResult[]) {
+    successful?.forEach((success) => {
+      const entry = entries.find((e) => e.Id === success.Id)!;
+      results.push({
+        clientId: entry._meta.clientId,
+        originalIndex: entry._meta.idx,
+        chunkId: entry._meta.chunkId,
+        status: "ENQUEUED",
+      });
+    });
+  }
+
+  private processFailedMessages(failed: BatchResultErrorEntry[], entries: QueueEntry[], errors: IngestError[]) {
+    failed?.forEach((failure) => {
+      const entry = entries.find((e) => e.Id === failure.Id)!;
+      errors.push({
+        clientId: entry._meta.clientId,
+        originalIndex: entry._meta.idx,
+        chunkId: entry._meta.chunkId,
+        status: "REJECTED",
+        code: this.sanitizeErrorCode(failure.Code!),
+        message: this.sanitizeErrorMessage(failure.Message!),
+      });
+    });
+  }
+
+  private handleBatchFailure(entries: QueueEntry[], error: unknown): { results: IngestResult[]; errors: IngestError[] } {
+    const errors: IngestError[] = [];
+
+    entries.forEach((entry) => {
+      errors.push({
+        clientId: entry._meta.clientId,
+        originalIndex: entry._meta.idx,
+        chunkId: entry._meta.chunkId,
+        status: "REJECTED",
+        code: "BATCH_ERROR",
+        message: this.sanitizeErrorMessage((error as Error)?.message ?? String(error)),
+      });
+    });
+
+    return { results: [], errors };
   }
 
   /**
@@ -247,23 +289,33 @@ export class IngestService {
     results: IngestResult[];
     errors: IngestError[];
   }> {
-    const BATCH_SIZE = 10;
-    const allResults: IngestResult[] = [];
-    const allErrors: IngestError[] = [];
+    const batchEntries = this.createAllBatchEntries(records, batchId, requestId);
+    const batchResults = await this.processAllBatchesInParallel(batchEntries);
+    return this.combineAllBatchResults(batchResults);
+  }
 
-    // Create all batch entries upfront
+  private createAllBatchEntries(records: IngestRecordWithId[], batchId: string, requestId?: string): QueueEntry[][] {
+    const BATCH_SIZE = 10;
     const batchEntries: QueueEntry[][] = [];
+
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const slice = records.slice(i, i + BATCH_SIZE);
       const entries = this.createBatchEntries(slice, batchId, i, requestId);
       batchEntries.push(entries);
     }
 
-    // Process all batches in parallel
-    const batchPromises = batchEntries.map(entries => this.sendBatch(entries));
-    const batchResults = await Promise.all(batchPromises);
+    return batchEntries;
+  }
 
-    // Combine all results
+  private async processAllBatchesInParallel(batchEntries: QueueEntry[][]): Promise<{ results: IngestResult[]; errors: IngestError[] }[]> {
+    const batchPromises = batchEntries.map(entries => this.sendBatch(entries));
+    return Promise.all(batchPromises);
+  }
+
+  private combineAllBatchResults(batchResults: { results: IngestResult[]; errors: IngestError[] }[]): { results: IngestResult[]; errors: IngestError[] } {
+    const allResults: IngestResult[] = [];
+    const allErrors: IngestError[] = [];
+
     batchResults.forEach(({ results, errors }) => {
       allResults.push(...results);
       allErrors.push(...errors);
@@ -282,6 +334,34 @@ export class IngestService {
     }));
   }
 
+  private async tryGetExistingBatch(idempotencyKey?: string) {
+    if (!idempotencyKey) {
+      return null;
+    }
+
+    const existingBatch = await this.getExistingBatch(idempotencyKey);
+    if (existingBatch) {
+      logger.info({ batchId: existingBatch.batchId, idempotencyKey }, "Returning existing batch for idempotency key");
+    }
+    return existingBatch;
+  }
+
+  private prepareRecordsForProcessing(records: IngestRecord[]): IngestRecordWithId[] {
+    const preprocessedRecords = this.preprocessRecords(records);
+    return this.deduplicateRecords(preprocessedRecords);
+  }
+
+  private async storeIdempotencyKeyIfProvided(idempotencyKey?: string, batchId?: string) {
+    if (idempotencyKey && batchId) {
+      await this.storeIdempotencyMapping(idempotencyKey, batchId);
+    }
+  }
+
+  private logBatchCompletion(batchId: string, startTime: number, successCount: number, errorCount: number) {
+    const duration = Date.now() - startTime;
+    logger.info({ batchId, duration, successful: successCount, failed: errorCount }, "Completed ingest for batch");
+  }
+
   /**
    * Main entry point for ingesting records
    */
@@ -292,35 +372,20 @@ export class IngestService {
   }> {
     const startTime = Date.now();
 
-    // Check for existing idempotency key first
-    if (idempotencyKey) {
-      const existingBatch = await this.getExistingBatch(idempotencyKey);
-      if (existingBatch) {
-        logger.info({ batchId: existingBatch.batchId, idempotencyKey }, "Returning existing batch for idempotency key");
-        return existingBatch;
-      }
+    const existingBatch = await this.tryGetExistingBatch(idempotencyKey);
+    if (existingBatch) {
+      return existingBatch;
     }
 
     const batchId = this.generateBatchId();
+    const processedRecords = this.prepareRecordsForProcessing(records);
 
-    // Preprocess records to generate chunkIds
-    const preprocessedRecords = this.preprocessRecords(records);
+    logger.info({ batchId, totalRecords: records.length, processedRecords: processedRecords.length }, "Starting ingest for batch");
 
-    // Deduplicate records within the batch based on content hash
-    const deduplicatedRecords = this.deduplicateRecords(preprocessedRecords);
+    const { results, errors } = await this.processRecords(processedRecords, batchId, requestId);
+    await this.storeIdempotencyKeyIfProvided(idempotencyKey, batchId);
 
-    logger.info({ batchId, totalRecords: records.length, deduplicatedRecords: deduplicatedRecords.length }, "Starting ingest for batch");
-
-    const { results, errors } = await this.processRecords(deduplicatedRecords, batchId, requestId);
-
-    // Store idempotency mapping if key provided
-    if (idempotencyKey) {
-      await this.storeIdempotencyMapping(idempotencyKey, batchId);
-    }
-
-    const duration = Date.now() - startTime;
-    logger.info({ batchId, duration, successful: results.length, failed: errors.length }, "Completed ingest for batch");
-
+    this.logBatchCompletion(batchId, startTime, results.length, errors.length);
     return { batchId, results, errors };
   }
 
@@ -333,57 +398,70 @@ export class IngestService {
     errors: IngestError[];
   } | null> {
     try {
-      const result = await prismaService.getBatchByKey(idempotencyKey);
-      if (!result.success || !result.batchId) {
+      const batchResult = await this.fetchBatchByKey(idempotencyKey);
+      if (!batchResult) {
         return null;
       }
 
-      // Get detailed chunk information to return individual chunk status
-      const chunkData = await prismaService.getEmbeddingsByBatchId(result.batchId);
-      if (!chunkData.success) {
+      const chunkData = await this.fetchChunkDataByBatchId(batchResult.batchId);
+      if (!chunkData) {
         return null;
       }
 
-      // Transform chunk data to IngestResult/IngestError format
-      const results: IngestResult[] = [];
-      const errors: IngestError[] = [];
-
-      chunkData.embeddings.forEach((chunk: any) => {
-        const chunkResult = {
-          clientId: chunk.clientId,
-          originalIndex: chunk.chunkIndex,
-          chunkId: chunk.id,
-          status: "enqueued" as const,
-          processingStatus: chunk.status as "ENQUEUED" | "INGESTED" | "FAILED",
-        };
-
-        if (chunk.status === 'ENQUEUED') {
-          results.push(chunkResult);
-        } else if (chunk.status === 'FAILED') {
-          errors.push({
-            clientId: chunk.clientId,
-            originalIndex: chunk.chunkIndex,
-            chunkId: chunk.id,
-            status: "rejected",
-            code: "PROCESSING_ERROR",
-            message: chunk.failureReason || "Processing failed",
-          });
-        } else if (chunk.status === 'INGESTED') {
-          // For ingested chunks, we still return them as "enqueued"
-          // since they were successfully processed
-          results.push(chunkResult);
-        }
-      });
-
-      return {
-        batchId: result.batchId,
-        results,
-        errors
-      };
+      const { results, errors } = this.transformChunkDataToResults(chunkData);
+      return { batchId: batchResult.batchId, results, errors };
     } catch (error) {
-      logger.error({ error }, "Failed to get existing batch");
-      return null;
+      logger.error({ error, idempotencyKey }, "Failed to get existing batch for idempotency key");
+      throw new Error(`Failed to check idempotency for key ${idempotencyKey}: ${error}`);
     }
+  }
+
+  private async fetchBatchByKey(idempotencyKey: string) {
+    const result = await this.databaseService.getBatchByKey(idempotencyKey);
+    return result.success && result.batchId ? { batchId: result.batchId } : null;
+  }
+
+  private async fetchChunkDataByBatchId(batchId: string) {
+    const chunkData = await this.databaseService.getChunksByBatchId(batchId);
+    return chunkData.success ? chunkData.chunks : null;
+  }
+
+  private transformChunkDataToResults(chunks: ChunkData[]): { results: IngestResult[]; errors: IngestError[] } {
+    const results: IngestResult[] = [];
+    const errors: IngestError[] = [];
+
+    chunks.forEach(chunk => {
+      const chunkResult = this.createChunkResult(chunk);
+
+      if (chunk.status === 'ENQUEUED' || chunk.status === 'INGESTED') {
+        results.push(chunkResult);
+      } else if (chunk.status === 'FAILED') {
+        errors.push(this.createChunkError(chunk));
+      }
+    });
+
+    return { results, errors };
+  }
+
+  private createChunkResult(chunk: ChunkData): IngestResult {
+    return {
+      clientId: chunk.clientId,
+      originalIndex: chunk.chunkIndex,
+      chunkId: chunk.id,
+      status: "ENQUEUED" as const,
+      processingStatus: chunk.status as "ENQUEUED" | "INGESTED" | "FAILED",
+    };
+  }
+
+  private createChunkError(chunk: ChunkData): IngestError {
+    return {
+      clientId: chunk.clientId,
+      originalIndex: chunk.chunkIndex,
+      chunkId: chunk.id,
+      status: "REJECTED",
+      code: "PROCESSING_ERROR",
+      message: chunk.failureReason || "Processing failed",
+    };
   }
 
   /**
@@ -391,10 +469,10 @@ export class IngestService {
    */
   private async storeIdempotencyMapping(idempotencyKey: string, batchId: string): Promise<void> {
     try {
-      await prismaService.storeIdempotencyKey(idempotencyKey, batchId);
+      await this.databaseService.storeIdempotencyKey(idempotencyKey, batchId);
     } catch (error) {
-      logger.error({ error }, "Failed to store idempotency mapping");
-      // Don't throw - this is not critical for the main flow
+      logger.error({ error, idempotencyKey, batchId }, "Failed to store idempotency mapping");
+      throw new Error(`Failed to store idempotency mapping for key ${idempotencyKey}: ${error}`);
     }
   }
 
@@ -420,4 +498,16 @@ export class IngestService {
 
     return deduplicated;
   }
+}
+
+/**
+ * Factory function to create IngestService with injected dependencies
+ * Dependencies should be created outside and injected for better testability
+ */
+export function createIngestService(
+  queueUrl: string,
+  databaseService: DatabaseService,
+  sqsService: SqsService
+): IngestService {
+  return new IngestService(queueUrl, databaseService, sqsService);
 }
