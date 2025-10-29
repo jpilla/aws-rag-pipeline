@@ -44,7 +44,7 @@ export interface IngestResult {
   clientId: string;
   originalIndex: number;
   chunkId: string;
-  status: "enqueued";
+  status: "ENQUEUED";
   processingStatus?: "ENQUEUED" | "INGESTED" | "FAILED";
 }
 
@@ -52,7 +52,7 @@ export interface IngestError {
   clientId: string;
   originalIndex: number;
   chunkId?: string;
-  status: "rejected";
+  status: "REJECTED";
   code: string;
   message: string;
 }

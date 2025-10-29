@@ -149,18 +149,18 @@ export class PrismaService {
   }
 
   /**
-   * Get embeddings by batchId with status information
+   * Get chunks by batchId with status information
    */
-  async getEmbeddingsByBatchId(batchId: string): Promise<{
+  async getChunksByBatchId(batchId: string): Promise<{
     success: boolean;
-    embeddings: any[];
+    chunks: any[];
     count: number;
     error?: string
   }> {
     try {
       const client = await this.getClient();
 
-      const embeddings = await client.$queryRaw`
+      const chunks = await client.$queryRaw`
         SELECT c.id, c."batchId", c."clientId", c."chunkIndex", c.content,
                CASE
                  WHEN e.embedding IS NOT NULL THEN 'INGESTED'
@@ -177,16 +177,16 @@ export class PrismaService {
 
       return {
         success: true,
-        embeddings: embeddings as any[],
-        count: (embeddings as any[]).length
+        chunks: chunks as any[],
+        count: (chunks as any[]).length
       };
     } catch (error: any) {
-      logger.error({ error }, "Batch embeddings retrieval failed");
+      logger.error({ error }, "Batch chunks retrieval failed");
       return {
         success: false,
-        embeddings: [],
+        chunks: [],
         count: 0,
-        error: error.message || "Failed to retrieve batch embeddings"
+        error: error.message || "Failed to retrieve batch chunks"
       };
     }
   }

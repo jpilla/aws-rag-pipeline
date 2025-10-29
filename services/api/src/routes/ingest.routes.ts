@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
-import { IngestService } from "../services/ingest.service";
+import { IngestService, createIngestService } from "../services/ingest.service";
+import { PrismaDatabaseAdapter } from "../services/adapters/database.adapter";
+import { AwsSqsAdapter } from "../services/adapters/sqs.adapter";
 import { prismaService } from "../services/prisma.service";
 import { IngestRequest, IngestResponse, IngestSummary } from "../types/ingest.types";
 import { BatchStatusResponse, ChunkStatusInfo, ChunkStatus, FailureReason } from "../types/status.types";
@@ -24,7 +26,9 @@ export async function initializeIngestService(): Promise<void> {
   }
 
   if (!ingestService) {
-    ingestService = new IngestService(QUEUE_URL, AWS_REGION);
+    const databaseService = new PrismaDatabaseAdapter();
+    const sqsService = new AwsSqsAdapter(AWS_REGION);
+    ingestService = createIngestService(QUEUE_URL, databaseService, sqsService);
     await ingestService.initialize();
   }
 }
@@ -156,7 +160,7 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     }
 
     // Get detailed chunk information
-    const chunkData = await prismaService.getEmbeddingsByBatchId(batchId);
+    const chunkData = await prismaService.getChunksByBatchId(batchId);
 
     if (!chunkData.success) {
       return res.status(500).json({
@@ -166,7 +170,7 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     }
 
     // Transform chunk data to our response format
-    const chunks: ChunkStatusInfo[] = chunkData.embeddings.map((chunk: any) => ({
+    const chunks: ChunkStatusInfo[] = chunkData.chunks.map((chunk: any) => ({
       chunkId: chunk.id,
       chunkIndex: chunk.chunkIndex,
       clientId: chunk.clientId,

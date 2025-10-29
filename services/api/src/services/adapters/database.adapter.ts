@@ -1,0 +1,20 @@
+import { DatabaseService, ChunkData } from '../ingest.service';
+import { prismaService } from '../prisma.service';
+
+export class PrismaDatabaseAdapter implements DatabaseService {
+  async getBatchByKey(idempotencyKey: string): Promise<{ success: boolean; batchId?: string }> {
+    return prismaService.getBatchByKey(idempotencyKey);
+  }
+
+  async getChunksByBatchId(batchId: string): Promise<{ success: boolean; chunks?: ChunkData[] }> {
+    const result = await prismaService.getChunksByBatchId(batchId);
+    return {
+      success: result.success,
+      chunks: result.chunks as ChunkData[]
+    };
+  }
+
+  async storeIdempotencyKey(idempotencyKey: string, batchId: string): Promise<void> {
+    await prismaService.storeIdempotencyKey(idempotencyKey, batchId);
+  }
+}
