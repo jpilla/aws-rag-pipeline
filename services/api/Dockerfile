@@ -8,12 +8,20 @@ RUN npm ci
 FROM node:20-alpine AS build
 WORKDIR /app
 
+# Optionally run tests during the build stage (default: true)
+ARG RUN_TESTS=true
+# Ensure readable, colorized logs in non-TTY Docker builds
+ENV FORCE_COLOR=1
+ENV TERM=xterm-256color
+
 # Prisma engines need these on alpine during build
 RUN apk add --no-cache openssl libc6-compat
 
 COPY services/api/package*.json ./
 COPY services/api/tsconfig.json ./
+COPY services/api/jest.config.js ./
 COPY services/api/src ./src
+COPY services/api/tests ./tests
 COPY prisma/schema.prisma ./prisma/schema.prisma
 COPY prisma/migrations/ ./prisma/migrations/
 
@@ -25,6 +33,12 @@ RUN [ -f prisma/schema.prisma ] && npx prisma generate || true
 
 # compile TS
 RUN npm run build
+
+# optionally run unit tests inside the image build; fails the build on test failure
+RUN if [ "$RUN_TESTS" = "true" ]; then \
+  printf '\n[build] ==================== Running Unit Tests (Jest) ====================\n\n'; \
+  npm run test -- --runInBand --verbose --colors; \
+  else echo "[build] Skipping unit tests (RUN_TESTS=$RUN_TESTS)"; fi
 
 # remove dev deps from node_modules (we'll add prisma CLI in runtime)
 RUN npm prune --omit=dev

@@ -1,4 +1,4 @@
-import { SQSClient, SendMessageBatchCommand, GetQueueAttributesCommand, SendMessageBatchCommandOutput, GetQueueAttributesCommandOutput, SendMessageBatchResultEntry, BatchResultErrorEntry } from "@aws-sdk/client-sqs";
+import { SendMessageBatchCommand, GetQueueAttributesCommand, SendMessageBatchCommandOutput, GetQueueAttributesCommandOutput, SendMessageBatchResultEntry, BatchResultErrorEntry } from "@aws-sdk/client-sqs";
 import crypto from "crypto";
 import {
   IngestRecord,
@@ -9,8 +9,6 @@ import {
   IngestError,
 } from "../types/ingest.types";
 import { logger } from "../lib/logger";
-import { PrismaDatabaseAdapter } from './adapters/database.adapter';
-import { AwsSqsAdapter } from './adapters/sqs.adapter';
 
 export interface ChunkData {
   id: string;
