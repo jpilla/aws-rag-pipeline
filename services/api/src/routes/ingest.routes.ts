@@ -60,11 +60,6 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
   // Support both standard Idempotency-Key and lowercase idempotency-key headers
   const idempotencyKey = (req.headers['Idempotency-Key'] || req.headers['idempotency-key']) as string;
 
-  // Additional service-level validation (keeping existing logic)
-  if (!service.validateRecords(records)) {
-    return res.status(400).json({ error: "records[] required" });
-  }
-
   try {
     logger.info({
       recordCount: records.length,
