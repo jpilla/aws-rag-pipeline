@@ -77,14 +77,14 @@ export class IngestService {
   /**
    * Validates that records array is present and non-empty
    */
-  validateRecords(records: unknown): records is IngestRecord[] {
+  private validateRecords(records: unknown): records is IngestRecord[] {
     return Array.isArray(records) && records.length > 0;
   }
 
   /**
    * Generates a unique batch ID for tracking
    */
-  generateBatchId(): string {
+  private generateBatchId(): string {
     return `b_${crypto.randomUUID()}`;
   }
 
@@ -178,7 +178,7 @@ export class IngestService {
   /**
    * Creates SQS batch entries from records with metadata for tracking
    */
-  createBatchEntries(
+  private createBatchEntries(
     records: IngestRecordWithId[],
     batchId: string,
     startIndex: number,
@@ -202,7 +202,7 @@ export class IngestService {
   /**
    * Sends a batch of entries to SQS
    */
-  async sendBatch(entries: QueueEntry[]): Promise<{
+  private async sendBatch(entries: QueueEntry[]): Promise<{
     results: IngestResult[];
     errors: IngestError[];
   }> {
@@ -279,7 +279,7 @@ export class IngestService {
   /**
    * Processes records in batches of 10 (SQS batch limit) with parallel execution
    */
-  async processRecords(
+  private async processRecords(
     records: IngestRecordWithId[],
     batchId: string,
     requestId?: string

@@ -3,6 +3,66 @@
   "configurations": [
     {
       "type": "node",
+      "request": "launch",
+      "name": "Debug Jest (current file)",
+      "runtimeExecutable": "/usr/local/bin/node",
+      "program": "${workspaceFolder}/services/api/node_modules/jest/bin/jest.js",
+      "cwd": "${workspaceFolder}/services/api",
+      "runtimeArgs": ["--inspect-brk"],
+      "args": ["--runInBand", "--watchAll=false", "${file}"],
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/services/**",
+        "!**/node_modules/**"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/services/**/dist/**/*.js",
+        "${workspaceFolder}/services/**/*.js"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Jest (single test)",
+      "runtimeExecutable": "/usr/local/bin/node",
+      "program": "${workspaceFolder}/services/api/node_modules/jest/bin/jest.js",
+      "cwd": "${workspaceFolder}/services/api",
+      "runtimeArgs": ["--inspect-brk"],
+      "args": ["--runInBand", "--watchAll=false", "${file}", "--testNamePattern", "${selectedText}"],
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/services/**",
+        "!**/node_modules/**"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/services/**/dist/**/*.js",
+        "${workspaceFolder}/services/**/*.js"
+      ]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Jest (all tests)",
+      "runtimeExecutable": "/usr/local/bin/node",
+      "program": "${workspaceFolder}/services/api/node_modules/jest/bin/jest.js",
+      "cwd": "${workspaceFolder}/services/api",
+      "runtimeArgs": ["--inspect-brk"],
+      "args": ["--runInBand", "--watchAll=false"],
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+      "resolveSourceMapLocations": [
+        "${workspaceFolder}/services/**",
+        "!**/node_modules/**"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/services/**/dist/**/*.js",
+        "${workspaceFolder}/services/**/*.js"
+      ]
+    },
+    {
+      "type": "node",
       "request": "attach",
       "name": "Attach to API in Docker",
       "address": "localhost",

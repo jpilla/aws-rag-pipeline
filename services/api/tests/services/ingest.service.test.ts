@@ -1,5 +1,5 @@
 import { IngestService, createIngestService, DatabaseService, SqsService } from '../../src/services/ingest.service';
-import { IngestRecord, IngestRecordWithId, QueueEntry } from '../../src/types/ingest.types';
+import { IngestRecord } from '../../src/types/ingest.types';
 
 jest.mock('../../src/lib/logger', () => ({
   logger: {
@@ -10,21 +10,13 @@ jest.mock('../../src/lib/logger', () => ({
   },
 }));
 
-// Helpers to build records
+// Helper to build records
 function makeRecord(overrides: Partial<IngestRecord> = {}): IngestRecord {
   return {
     clientId: 'client-1',
     content: { a: 1 },
     ...overrides,
   };
-}
-
-function withId(r: IngestRecord, id: string): IngestRecordWithId {
-  return { ...r, chunkId: id } as IngestRecordWithId;
-}
-
-function parseEntries(entries: QueueEntry[]) {
-  return entries.map(e => ({ id: e.Id, meta: e._meta, body: JSON.parse(e.MessageBody) }));
 }
 
 describe('IngestService', () => {
@@ -61,80 +53,47 @@ describe('IngestService', () => {
     });
   });
 
-  describe('validateRecords', () => {
-    it('whenRecordsIsValidArray_returnsTrue', () => {
-      expect(service.validateRecords([makeRecord()])).toBe(true);
-    });
-    it('whenRecordsIsEmptyArray_returnsFalse', () => {
-      expect(service.validateRecords([])).toBe(false);
-    });
-    it('whenRecordsIsNotArray_returnsFalse', () => {
-      expect(service.validateRecords(undefined as any)).toBe(false);
-    });
-  });
+  describe('ingest with error handling', () => {
+    it('whenSqsReturnsMixedResults_handlesSuccessesAndFailures', async () => {
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const entries = cmd.input.Entries;
+        const firstId = entries[0].Id;
+        const secondId = entries[1].Id;
+        return {
+          Successful: [{ Id: firstId }],
+          Failed: [{ Id: secondId, Code: 'InvalidParameterValue', Message: 'Error: path /var/log/app.js' }],
+        } as any;
+      });
 
-  describe('createBatchEntries', () => {
-    it('whenCreatingEntries_buildsMessageWithMetadataAndHash', () => {
-      const batchId = 'b_123';
-      const r1 = withId(makeRecord({ metadata: { foo: 'bar' } }), 'c_1');
-      const entries = service.createBatchEntries([r1], batchId, 0, 'req-1');
-      const parsed = parseEntries(entries)[0];
-      expect(parsed.id).toBe('c_1');
-      expect(parsed.meta).toEqual({ chunkId: 'c_1', clientId: 'client-1', idx: 0 });
-      expect(parsed.body.batchId).toBe(batchId);
-      expect(parsed.body.metadata.foo).toBe('bar');
-      expect(parsed.body.metadata.requestId).toBe('req-1');
-      expect(typeof parsed.body.contentHash).toBe('string');
-      expect(parsed.body.contentHash.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('sendBatch', () => {
-    it('whenSqsReturnsMixedResults_mapsSuccessesAndFailures', async () => {
-      const entries = service.createBatchEntries(
-        [withId(makeRecord(), 'c_1'), withId(makeRecord(), 'c_2')],
-        'b_x',
-        0
-      );
-      sqs.sendMessageBatch.mockResolvedValue({
-        Successful: [{ Id: entries[0].Id }],
-        Failed: [{ Id: entries[1].Id, Code: 'InvalidParameterValue', Message: 'Error: path /var/log/app.js' }],
-      } as any);
-
-      const { results, errors } = await service.sendBatch(entries);
-      expect(results).toEqual([
-        {
-          clientId: entries[0]._meta.clientId,
-          originalIndex: entries[0]._meta.idx,
-          chunkId: entries[0]._meta.chunkId,
-          status: 'ENQUEUED',
-        },
+      const out = await service.ingest([
+        makeRecord({ clientId: 'client-1', content: 'record-1' }),
+        makeRecord({ clientId: 'client-2', content: 'record-2' })
       ]);
-      expect(errors[0].status).toBe('REJECTED');
-      expect(errors[0].code).toBe('INVALID_PARAMETER'); // mapped
-      expect(errors[0].message).not.toMatch(/\/var\/log/); // sanitized
+
+      expect(out.results.length).toBe(1);
+      expect(out.errors.length).toBe(1);
+      expect(out.errors[0].code).toBe('INVALID_PARAMETER'); // mapped
+      expect(out.errors[0].message).not.toMatch(/\/var\/log/); // sanitized
     });
 
     it('whenSqsThrows_returnsBatchErrorForAllEntries', async () => {
-      const entries = service.createBatchEntries(
-        [withId(makeRecord(), 'c_1'), withId(makeRecord(), 'c_2')],
-        'b_x',
-        0
-      );
       sqs.sendMessageBatch.mockRejectedValue(new Error('http://example.com secret stack at X'));
-      const { results, errors } = await service.sendBatch(entries);
-      expect(results).toEqual([]);
-      expect(errors).toHaveLength(2);
-      expect(errors.every(e => e.code === 'BATCH_ERROR')).toBe(true);
-      // message is sanitized: url/stack removed
-      expect(errors[0].message).not.toMatch(/http:\/\/example.com/);
-    });
-  });
 
-  describe('processRecords', () => {
+      const out = await service.ingest([
+        makeRecord({ clientId: 'client-1', content: 'record-1' }),
+        makeRecord({ clientId: 'client-2', content: 'record-2' })
+      ]);
+
+      expect(out.results).toEqual([]);
+      expect(out.errors).toHaveLength(2);
+      expect(out.errors.every(e => e.code === 'BATCH_ERROR')).toBe(true);
+      // message is sanitized: url/stack removed
+      expect(out.errors[0].message).not.toMatch(/http:\/\/example.com/);
+    });
+
     it('whenMoreThanTenRecords_sendsInBatchesAndCombinesResults', async () => {
-      const records: IngestRecordWithId[] = Array.from({ length: 23 }).map((_, i) =>
-        withId(makeRecord({ clientId: `c${i}` }), `c_${i}`)
+      const records = Array.from({ length: 23 }).map((_, i) =>
+        makeRecord({ clientId: `c${i}`, content: `record-${i}` })
       );
 
       // 3 batches: 10, 10, 3
@@ -150,10 +109,10 @@ describe('IngestService', () => {
         } as any;
       });
 
-      const { results, errors } = await service.processRecords(records, 'b_1', 'req-1');
-      expect(results.length).toBe(22);
-      expect(errors.length).toBe(1);
-      expect(errors[0].code).toBe('MESSAGE_TOO_LARGE');
+      const out = await service.ingest(records);
+      expect(out.results.length).toBe(22);
+      expect(out.errors.length).toBe(1);
+      expect(out.errors[0].code).toBe('MESSAGE_TOO_LARGE');
     });
   });
 
@@ -175,9 +134,43 @@ describe('IngestService', () => {
       expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
     });
 
+    it('whenBatchFoundButNoChunks_createsNewBatchAndProcesses', async () => {
+      db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
+      db.getChunksByBatchId.mockResolvedValue({ success: true, chunks: undefined });
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: ids.map((Id: string) => ({ Id })),
+          Failed: [],
+        } as any;
+      });
+
+      const out = await service.ingest([makeRecord({ clientId: 'client-1', content: 'new' })], 'idem-2');
+      expect(out.batchId).not.toBe('b_exist');
+      expect(out.batchId).toMatch(/^b_/);
+      expect(sqs.sendMessageBatch).toHaveBeenCalled();
+    });
+
+    it('whenFetchChunksByBatchIdFails_createsNewBatchAndProcesses', async () => {
+      db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
+      db.getChunksByBatchId.mockResolvedValue({ success: false });
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: ids.map((Id: string) => ({ Id })),
+          Failed: [],
+        } as any;
+      });
+
+      const out = await service.ingest([makeRecord({ clientId: 'client-1', content: 'new' })], 'idem-3');
+      expect(out.batchId).not.toBe('b_exist');
+      expect(out.batchId).toMatch(/^b_/);
+      expect(sqs.sendMessageBatch).toHaveBeenCalled();
+    });
+
     it('whenIdempotencyLookupFails_throws', async () => {
       db.getBatchByKey.mockRejectedValue(new Error('db down'));
-      await expect(service.ingest([makeRecord()], 'idem-2')).rejects.toThrow('Failed to check idempotency');
+      await expect(service.ingest([makeRecord()], 'idem-4')).rejects.toThrow('Failed to check idempotency');
     });
   });
 
@@ -186,7 +179,13 @@ describe('IngestService', () => {
       // Make two identical records to test dedup keeps first
       const input = [makeRecord({ content: { same: true } }), makeRecord({ content: { same: true } })];
       // One success returned to count as processed
-      sqs.sendMessageBatch.mockResolvedValue({ Successful: [{}], Failed: [] } as any);
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: ids.map((Id: string) => ({ Id })),
+          Failed: [],
+        } as any;
+      });
 
       const out = await service.ingest(input, undefined, 'req-7');
       expect(out.batchId).toMatch(/^b_/);
@@ -200,26 +199,90 @@ describe('IngestService', () => {
       // No existing batch found
       db.getBatchByKey.mockResolvedValue({ success: false } as any);
       // force at least one processed message
-      sqs.sendMessageBatch.mockResolvedValue({ Successful: [{}], Failed: [] } as any);
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: ids.map((Id: string) => ({ Id })),
+          Failed: [],
+        } as any;
+      });
       db.storeIdempotencyKey.mockRejectedValue(new Error('cannot store'));
-      await expect(service.ingest([makeRecord()], 'idem-3')).rejects.toThrow('Failed to store idempotency mapping');
+      await expect(service.ingest([makeRecord({ clientId: 'client-1', content: 'rec1' })], 'idem-3')).rejects.toThrow('Failed to store idempotency mapping');
     });
   });
 
-  describe('deduplicateRecords', () => {
+  describe('ingest with deduplication', () => {
     it('whenDuplicateContents_present_keepsFirstOccurrenceOnly', async () => {
-      const pre = (service as any).preprocessRecords([
-        makeRecord({ content: 'A' }),
-        makeRecord({ content: 'A' }),
-        makeRecord({ content: 'B' }),
-        makeRecord({ content: 'A' }),
-      ]) as IngestRecordWithId[];
+      const records = [
+        makeRecord({ clientId: 'c1', content: 'A' }),
+        makeRecord({ clientId: 'c2', content: 'A' }),
+        makeRecord({ clientId: 'c3', content: 'B' }),
+        makeRecord({ clientId: 'c4', content: 'A' }),
+      ];
 
-      const out = (service as any).deduplicateRecords(pre) as IngestRecordWithId[];
-      // Expect only 2: 'A' and 'B'
-      expect(out).toHaveLength(2);
-      const contents = out.map(r => r.content);
-      expect(contents.sort()).toEqual(['A', 'B']);
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: ids.map((Id: string) => ({ Id })),
+          Failed: [],
+        } as any;
+      });
+
+      const out = await service.ingest(records);
+      // Expect only 2 results: first 'A' and first 'B' (dedup removes duplicates)
+      expect(out.results.length).toBe(2);
+      expect(out.errors.length).toBe(0);
+    });
+  });
+
+  describe('ingest success path', () => {
+    it('whenAllRecordsSuccess_allSucceedAndIdempotencyStored', async () => {
+      db.getBatchByKey.mockResolvedValue({ success: false });
+
+      const records = [
+        makeRecord({ clientId: 'c1', content: 'rec1' }),
+        makeRecord({ clientId: 'c2', content: 'rec2' }),
+        makeRecord({ clientId: 'c3', content: 'rec3' }),
+      ];
+
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: ids.map((Id: string) => ({ Id })),
+          Failed: [],
+        } as any;
+      });
+
+      const out = await service.ingest(records, 'idem-success');
+      expect(out.results.length).toBe(3);
+      expect(out.errors.length).toBe(0);
+      expect(out.batchId).toMatch(/^b_/);
+      expect(db.storeIdempotencyKey).toHaveBeenCalledWith('idem-success', out.batchId);
+    });
+  });
+
+  describe('ingest all failures', () => {
+    it('whenAllRecordsFail_allFailAndIdempotencyStored', async () => {
+      db.getBatchByKey.mockResolvedValue({ success: false });
+
+      const records = [
+        makeRecord({ clientId: 'c1', content: 'rec1' }),
+        makeRecord({ clientId: 'c2', content: 'rec2' }),
+      ];
+
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: [],
+          Failed: ids.map((Id: string) => ({ Id, Code: 'MessageTooLarge', Message: 'too big' })),
+        } as any;
+      });
+
+      const out = await service.ingest(records, 'idem-all-fail');
+      expect(out.results.length).toBe(0);
+      expect(out.errors.length).toBe(2);
+      expect(out.batchId).toMatch(/^b_/);
+      expect(db.storeIdempotencyKey).toHaveBeenCalledWith('idem-all-fail', out.batchId);
     });
   });
 });

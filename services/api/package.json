@@ -7,6 +7,7 @@
     "build": "tsc -p .",
     "start": "node dist/server.js",
     "test": "jest --passWithNoTests",
+    "test:debug": "node --inspect-brk ./node_modules/jest/bin/jest.js --runInBand --watchAll=false",
     "test:cov": "jest --coverage",
     "test:watch": "jest --watch",
     "prisma:make": "scripts/prisma-make.sh",

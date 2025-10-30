@@ -9,6 +9,12 @@ module.exports = {
   globals: {
     'ts-jest': {
       tsconfig: '<rootDir>/tests/tsconfig.json',
+      isolatedModules: false,
     },
+  },
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {
+      tsconfig: '<rootDir>/tests/tsconfig.json',
+    }],
   },
 };
