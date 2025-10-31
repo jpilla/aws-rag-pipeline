@@ -69,6 +69,15 @@ export class SecurityGroups extends Construct {
       ec2.Port.tcp(5432),
       'API to Database (5432)'
     );
+
+    // Allow dev IP if provided for local development
+    if (process.env.DEV_IP) {
+      this.dbSg.addIngressRule(
+        ec2.Peer.ipv4(`${process.env.DEV_IP}/32`),
+        ec2.Port.tcp(5432),
+        'Dev local access'
+      );
+    }
   }
 
   /**

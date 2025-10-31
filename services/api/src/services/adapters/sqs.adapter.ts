@@ -4,9 +4,10 @@ import { SQSClient, SendMessageBatchCommand, GetQueueAttributesCommand, SendMess
 export class AwsSqsAdapter implements SqsService {
   private sqsClient: SQSClient;
 
-  constructor(region: string = 'us-east-1') {
+  constructor(region?: string) {
+    
     this.sqsClient = new SQSClient({
-      region,
+      ...(region && { region }),
       maxAttempts: 3,
     });
   }

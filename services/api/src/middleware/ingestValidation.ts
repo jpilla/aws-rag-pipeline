@@ -142,6 +142,7 @@ export class IngestValidators {
 
   /**
    * Validate batch ID parameter
+   * Batch IDs are in the format: b_[uuid]
    */
   static validateBatchId(batchId: string): ValidationResult {
     const errors: ValidationError[] = [];
@@ -153,9 +154,15 @@ export class IngestValidators {
         value: batchId
       });
     } else {
-      // Validate UUID format
-      const uuidError = ValidationUtils.validateUuid(batchId, 'batchId');
-      if (uuidError) errors.push(uuidError);
+      // Validate batch ID format: b_[uuid]
+      const batchIdRegex = /^b_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!batchIdRegex.test(batchId)) {
+        errors.push({
+          field: 'batchId',
+          message: 'batchId must be a valid batch ID (format: b_[uuid])',
+          value: batchId
+        });
+      }
     }
 
     return {

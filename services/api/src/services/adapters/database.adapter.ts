@@ -6,11 +6,12 @@ export class PrismaDatabaseAdapter implements DatabaseService {
     return prismaService.getBatchByKey(idempotencyKey);
   }
 
-  async getChunksByBatchId(batchId: string): Promise<{ success: boolean; chunks?: ChunkData[] }> {
+  async getChunksByBatchId(batchId: string): Promise<{ success: boolean; chunks?: ChunkData[]; error?: string }> {
     const result = await prismaService.getChunksByBatchId(batchId);
     return {
       success: result.success,
-      chunks: result.chunks as ChunkData[]
+      chunks: result.chunks as ChunkData[],
+      error: result.error
     };
   }
 

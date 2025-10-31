@@ -20,7 +20,7 @@ export interface ChunkData {
 
 export interface DatabaseService {
   getBatchByKey(idempotencyKey: string): Promise<{ success: boolean; batchId?: string }>;
-  getChunksByBatchId(batchId: string): Promise<{ success: boolean; chunks?: ChunkData[] }>;
+  getChunksByBatchId(batchId: string): Promise<{ success: boolean; chunks?: ChunkData[]; error?: string }>;
   storeIdempotencyKey(idempotencyKey: string, batchId: string): Promise<void>;
 }
 
@@ -68,9 +68,16 @@ export class IngestService {
 
       this.isInitialized = true;
       logger.info({ queueUrl: this.queueUrl }, "SQS client initialized");
-    } catch (error) {
-      logger.error({ error }, "Failed to initialize SQS client");
-      throw new Error(`SQS client initialization failed: ${error}`);
+    } catch (error: any) {
+      const errorDetails = {
+        message: error?.message || String(error),
+        code: error?.Code || error?.code,
+        name: error?.name,
+        $metadata: error?.$metadata,
+        stack: error?.stack
+      };
+      logger.error({ error: errorDetails }, "Failed to initialize SQS client");
+      throw new Error(`SQS client initialization failed: ${error?.message || String(error)}`);
     }
   }
 
@@ -402,8 +409,16 @@ export class IngestService {
       }
 
       const chunkData = await this.fetchChunkDataByBatchId(batchResult.batchId);
-      if (!chunkData) {
-        return null;
+      // If chunks don't exist yet (lambda hasn't processed them), return batchId with empty results
+      // This is a valid idempotency match - the request was already processed
+      if (!chunkData || chunkData.length === 0) {
+        logger.info({ batchId: batchResult.batchId, idempotencyKey },
+          "Idempotency match found but chunks not yet processed");
+        return {
+          batchId: batchResult.batchId,
+          results: [],
+          errors: []
+        };
       }
 
       const { results, errors } = this.transformChunkDataToResults(chunkData);
@@ -419,9 +434,14 @@ export class IngestService {
     return result.success && result.batchId ? { batchId: result.batchId } : null;
   }
 
-  private async fetchChunkDataByBatchId(batchId: string) {
+  private async fetchChunkDataByBatchId(batchId: string): Promise<any[] | null> {
     const chunkData = await this.databaseService.getChunksByBatchId(batchId);
-    return chunkData.success ? chunkData.chunks : null;
+    // If database query fails (success: false), throw an error
+    if (!chunkData.success) {
+      throw new Error(`Failed to fetch chunks for batch ${batchId}: ${chunkData.error || 'Unknown error'}`);
+    }
+    // If query succeeds but chunks don't exist yet (empty array or undefined), return null
+    return chunkData.chunks || null;
   }
 
   private transformChunkDataToResults(chunks: ChunkData[]): { results: IngestResult[]; errors: IngestError[] } {
@@ -446,8 +466,7 @@ export class IngestService {
       clientId: chunk.clientId,
       originalIndex: chunk.chunkIndex,
       chunkId: chunk.id,
-      status: "ENQUEUED" as const,
-      processingStatus: chunk.status as "ENQUEUED" | "INGESTED" | "FAILED",
+      status: chunk.status as "ENQUEUED" | "INGESTED" | "FAILED",
     };
   }
 
