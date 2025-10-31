@@ -55,7 +55,9 @@ export class PrismaService {
         throw new Error('DB_USER and DB_PASSWORD environment variables are required');
       }
 
-      const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}?sslmode=require`;
+      // SSL mode: require for production (AWS RDS), disable for local development
+      const sslMode = process.env.DB_SSLMODE || 'require';
+      const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}?sslmode=${sslMode}`;
 
       this.client = new PrismaClient({
         datasources: {

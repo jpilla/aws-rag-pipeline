@@ -14,7 +14,7 @@ const router = Router();
 
 // Initialize the ingest service
 const QUEUE_URL = process.env.INGEST_QUEUE_URL!;
-const AWS_REGION = process.env.AWS_REGION || "us-east-1";
+const AWS_REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
 
 let ingestService: IngestService | null = null;
 
@@ -24,6 +24,12 @@ let ingestService: IngestService | null = null;
 export async function initializeIngestService(): Promise<void> {
   if (!QUEUE_URL) {
     throw new Error("INGEST_QUEUE_URL environment variable not set");
+  }
+
+  if (!AWS_REGION) {
+    throw new Error(
+      "AWS_REGION is required. Please set AWS_REGION or AWS_DEFAULT_REGION environment variable."
+    );
   }
 
   if (!ingestService) {
@@ -71,8 +77,8 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
     const { batchId, results, errors } = await service.ingest(records, idempotencyKey, req.requestId);
 
     // Build summary - distinguish between actually enqueued vs already processed
-    const actuallyEnqueued = results.filter(r => r.processingStatus === 'ENQUEUED').length;
-    const alreadyProcessed = results.filter(r => r.processingStatus === 'INGESTED').length;
+    const actuallyEnqueued = results.filter(r => r.status === 'ENQUEUED').length;
+    const alreadyProcessed = results.filter(r => r.status === 'INGESTED').length;
 
     const summary: IngestSummary = {
       received: records.length,
@@ -82,7 +88,14 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
     };
 
     // Determine response status
-    const status = results.length > 0 ? 202 : 503;
+    // If we have a batchId but no results/errors, this is an idempotency match with chunks not yet processed
+    // Return 202 Accepted (consistent with original request) instead of 503 (service unavailable)
+    const isIdempotentMatchWithNoChunks = batchId && results.length === 0 && errors.length === 0;
+    const status = isIdempotentMatchWithNoChunks
+      ? 202  // Idempotency match, request was accepted (chunks may still be processing)
+      : results.length > 0
+        ? 202  // New request with successful enqueues
+        : 503; // Actual service issue
 
     // Send response
     const response: IngestResponse = {

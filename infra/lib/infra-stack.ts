@@ -15,6 +15,7 @@ import { ApiService } from './constructs/api-service';
 import { SqsQueues } from './constructs/sqs-queues';
 import { IngestLambda } from './constructs/ingest-lambda';
 import { Database } from './constructs/database';
+import { BastionHost } from './constructs/bastion-host';
 
 export class InfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -52,6 +53,13 @@ export class InfraStack extends Stack {
     const database = new Database(this, 'Database', {
       vpc: networking.vpc,
       dbSecurityGroup: securityGroups.dbSg,
+    });
+
+    // ---------- Bastion Host (for local dev database access) ----------
+    const bastion = new BastionHost(this, 'BastionHost', {
+      vpc: networking.vpc,
+      dbSecurityGroup: securityGroups.dbSg,
+      devIp: process.env.DEV_IP,
     });
 
     // ---------- SQS Queues ----------
@@ -131,5 +139,9 @@ export class InfraStack extends Stack {
     new CfnOutput(this, 'IsolatedSubnets', { value: networking.getIsolatedSubnetIds() });
     new CfnOutput(this, 'AlbDnsName', { value: apiService.getLoadBalancerDnsName() });
     new CfnOutput(this, 'IngestQueueUrl', { value: sqsQueues.getQueueUrl() });
+    new CfnOutput(this, 'RdsProxyEndpoint', { value: database.proxy.endpoint });
+    new CfnOutput(this, 'DatabaseSecretArn', { value: database.secret.secretArn });
+    new CfnOutput(this, 'BastionInstanceId', { value: bastion.instance.instanceId });
+    new CfnOutput(this, 'BastionPublicIp', { value: bastion.instance.instancePublicIp });
   }
 }

@@ -41,9 +41,33 @@ services:
       HELLO_URL: "http://hello:${HELLO_PORT:-3001}"
       HELLO_MOCK: "${HELLO_MOCK:-0}"
       NODE_OPTIONS: "--enable-source-maps"
+      # Database connection:
+      # - Default: "postgres" (local container)
+      # - With bastion tunnel: "host.docker.internal" (macOS/Windows) or host IP (Linux)
+      # - Direct RDS: Set DB_HOST to RDS Proxy endpoint (requires VPN/public subnet)
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-${POSTGRES_DB:-embeddings}}"
+      DB_USER: "${DB_USER:-${POSTGRES_USER:-postgres}}"
+      DB_PASSWORD: "${DB_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}"
+      DB_SSLMODE: "${DB_SSLMODE:-disable}"
+      # AWS SQS configuration (passed through from host)
+      INGEST_QUEUE_URL: "${INGEST_QUEUE_URL:-}"
+      AWS_REGION: "${AWS_REGION:-}"
+      AWS_PROFILE: "${AWS_PROFILE:-}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
+      # OpenAI configuration (passed through from host)
+      OPENAI_SECRET: "${OPENAI_SECRET:-}"
     ports:
       - "${API_HOST_PORT:-3000}:3000"
+    volumes:
+      # Mount AWS credentials directory for profile-based authentication
+      - "${HOME}/.aws:/root/.aws:ro"
     depends_on:
+      postgres:
+        condition: service_healthy
       hello:
         condition: service_healthy
 
@@ -53,9 +77,35 @@ services:
     command: ["node", "--enable-source-maps", "--inspect-brk=0.0.0.0:9229", "dist/server.js"]
     environment:
       NODE_OPTIONS: ""
+      # Ensure all environment variables from api are inherited
+      PORT: "${API_PORT:-3000}"
+      HELLO_URL: "http://hello:${HELLO_PORT:-3001}"
+      HELLO_MOCK: "${HELLO_MOCK:-0}"
+      # Database connection:
+      # - Default: "postgres" (local container)
+      # - With bastion tunnel: "host.docker.internal" (macOS/Windows) or host IP (Linux)
+      # - Direct RDS: Set DB_HOST to RDS Proxy endpoint (requires VPN/public subnet)
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-${POSTGRES_DB:-embeddings}}"
+      DB_USER: "${DB_USER:-${POSTGRES_USER:-postgres}}"
+      DB_PASSWORD: "${DB_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}"
+      DB_SSLMODE: "${DB_SSLMODE:-disable}"
+      # AWS SQS configuration (passed through from host)
+      INGEST_QUEUE_URL: "${INGEST_QUEUE_URL:-}"
+      AWS_REGION: "${AWS_REGION:-}"
+      AWS_PROFILE: "${AWS_PROFILE:-}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
+      # OpenAI configuration (passed through from host)
+      OPENAI_SECRET: "${OPENAI_SECRET:-}"
     ports:
       - "${API_HOST_PORT:-3000}:3000"
       - "9229:9229"
+    volumes:
+      # Mount AWS credentials directory for profile-based authentication
+      - "${HOME}/.aws:/root/.aws:ro"
 
   integration-tests:
     build:
