@@ -69,12 +69,8 @@ async function initializeClients(): Promise<void> {
     logger.info("OpenAI client initialized");
 
     // Initialize ingest service (SQS client)
-    try {
-      await initializeIngestService();
-      logger.info("Ingest service (SQS client) initialized");
-    } catch (error) {
-      logger.warn({ error }, "Failed to initialize ingest service, continuing without it");
-    }
+    await initializeIngestService();
+    logger.info("Ingest service (SQS client) initialized");
 
     logger.info("All external clients initialized successfully");
   } catch (error) {

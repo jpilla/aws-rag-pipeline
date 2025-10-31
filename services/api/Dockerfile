@@ -73,7 +73,9 @@ RUN printf '%s\n' \
     'DBU=$(encode DB_USER)' \
     'DBP=$(encode DB_PASSWORD)' \
     '' \
-    'export DATABASE_URL="postgresql://${DBU}:${DBP}@${DB_HOST}:5432/${DB_NAME}?sslmode=require"' \
+    '# Use DB_SSLMODE if set, otherwise default to require for production' \
+    'SSL_MODE="${DB_SSLMODE:-require}"' \
+    'export DATABASE_URL="postgresql://${DBU}:${DBP}@${DB_HOST}:5432/${DB_NAME}?sslmode=${SSL_MODE}"' \
     'echo "[entrypoint] Running Prisma migrations…"' \
     'i=1' \
     'until npx prisma migrate deploy; do' \

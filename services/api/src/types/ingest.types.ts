@@ -44,8 +44,7 @@ export interface IngestResult {
   clientId: string;
   originalIndex: number;
   chunkId: string;
-  status: "ENQUEUED";
-  processingStatus?: "ENQUEUED" | "INGESTED" | "FAILED";
+  status: "ENQUEUED" | "INGESTED" | "FAILED";
 }
 
 export interface IngestError {

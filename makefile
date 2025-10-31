@@ -46,11 +46,30 @@ build-local:
 	docker-compose build
 
 run-local: build-local
-	@echo "🚀 Running app locally"
+	@echo "🚀 Running app locally with local Postgres"
+	@echo "💡 Make sure you have AWS_PROFILE set and INGEST_QUEUE_URL in your environment"
+	# Ensure postgres is running first
+	docker-compose up -d postgres
+	# Wait for postgres to be ready
+	@echo "⏳ Waiting for Postgres to be ready..."
+	@until docker-compose exec postgres pg_isready -U postgres -d embeddings >/dev/null 2>&1; do \
+		sleep 1; \
+	done
+	# Run migrations if needed (optional - user can run manually with make local-db)
+	@echo "✅ Postgres ready, starting services..."
 	docker-compose up -d
 
 run-debug: build-api
-	@echo "🐛 Starting app in debug mode"
+	@echo "🐛 Starting app in debug mode with local Postgres"
+	@echo "💡 Make sure you have AWS_PROFILE set and INGEST_QUEUE_URL in your environment"
+	# Ensure postgres is running first
+	docker-compose up -d postgres
+	# Wait for postgres to be ready
+	@echo "⏳ Waiting for Postgres to be ready..."
+	@until docker-compose exec postgres pg_isready -U postgres -d embeddings >/dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "✅ Postgres ready, starting debug service..."
 	docker-compose --profile debug up -d api-debug
 
 integration-tests:

@@ -18,7 +18,6 @@ export class OpenAIService {
       }
 
       this.client = new OpenAI({ apiKey });
-      logger.info('OpenAI client initialized');
     }
     return this.client;
   }

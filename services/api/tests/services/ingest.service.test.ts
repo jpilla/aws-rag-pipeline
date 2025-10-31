@@ -134,38 +134,24 @@ describe('IngestService', () => {
       expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
     });
 
-    it('whenBatchFoundButNoChunks_createsNewBatchAndProcesses', async () => {
+    it('whenBatchFoundButNoChunks_returnsExistingBatchWithEmptyResults', async () => {
       db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
       db.getChunksByBatchId.mockResolvedValue({ success: true, chunks: undefined });
-      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
-        const ids = cmd.input.Entries.map((e: any) => e.Id);
-        return {
-          Successful: ids.map((Id: string) => ({ Id })),
-          Failed: [],
-        } as any;
-      });
 
       const out = await service.ingest([makeRecord({ clientId: 'client-1', content: 'new' })], 'idem-2');
-      expect(out.batchId).not.toBe('b_exist');
-      expect(out.batchId).toMatch(/^b_/);
-      expect(sqs.sendMessageBatch).toHaveBeenCalled();
+      expect(out.batchId).toBe('b_exist');
+      expect(out.results).toEqual([]);
+      expect(out.errors).toEqual([]);
+      expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
     });
 
-    it('whenFetchChunksByBatchIdFails_createsNewBatchAndProcesses', async () => {
+    it('whenFetchChunksByBatchIdFails_throwsError', async () => {
       db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
-      db.getChunksByBatchId.mockResolvedValue({ success: false });
-      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
-        const ids = cmd.input.Entries.map((e: any) => e.Id);
-        return {
-          Successful: ids.map((Id: string) => ({ Id })),
-          Failed: [],
-        } as any;
-      });
+      db.getChunksByBatchId.mockResolvedValue({ success: false, error: 'Database query failed' });
 
-      const out = await service.ingest([makeRecord({ clientId: 'client-1', content: 'new' })], 'idem-3');
-      expect(out.batchId).not.toBe('b_exist');
-      expect(out.batchId).toMatch(/^b_/);
-      expect(sqs.sendMessageBatch).toHaveBeenCalled();
+      await expect(service.ingest([makeRecord({ clientId: 'client-1', content: 'new' })], 'idem-3'))
+        .rejects.toThrow('Failed to check idempotency for key idem-3');
+      expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
     });
 
     it('whenIdempotencyLookupFails_throws', async () => {
