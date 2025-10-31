@@ -41,13 +41,16 @@ services:
       HELLO_URL: "http://hello:${HELLO_PORT:-3001}"
       HELLO_MOCK: "${HELLO_MOCK:-0}"
       NODE_OPTIONS: "--enable-source-maps"
-      # Local Postgres connection
-      DB_HOST: "postgres"
-      DB_PORT: "5432"
-      DB_NAME: "${POSTGRES_DB:-embeddings}"
-      DB_USER: "${POSTGRES_USER:-postgres}"
-      DB_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
-      DB_SSLMODE: "disable"
+      # Database connection:
+      # - Default: "postgres" (local container)
+      # - With bastion tunnel: "host.docker.internal" (macOS/Windows) or host IP (Linux)
+      # - Direct RDS: Set DB_HOST to RDS Proxy endpoint (requires VPN/public subnet)
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-${POSTGRES_DB:-embeddings}}"
+      DB_USER: "${DB_USER:-${POSTGRES_USER:-postgres}}"
+      DB_PASSWORD: "${DB_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}"
+      DB_SSLMODE: "${DB_SSLMODE:-disable}"
       # AWS SQS configuration (passed through from host)
       INGEST_QUEUE_URL: "${INGEST_QUEUE_URL:-}"
       AWS_REGION: "${AWS_REGION:-}"
@@ -78,13 +81,16 @@ services:
       PORT: "${API_PORT:-3000}"
       HELLO_URL: "http://hello:${HELLO_PORT:-3001}"
       HELLO_MOCK: "${HELLO_MOCK:-0}"
-      # Local Postgres connection
-      DB_HOST: "postgres"
-      DB_PORT: "5432"
-      DB_NAME: "${POSTGRES_DB:-embeddings}"
-      DB_USER: "${POSTGRES_USER:-postgres}"
-      DB_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
-      DB_SSLMODE: "disable"
+      # Database connection:
+      # - Default: "postgres" (local container)
+      # - With bastion tunnel: "host.docker.internal" (macOS/Windows) or host IP (Linux)
+      # - Direct RDS: Set DB_HOST to RDS Proxy endpoint (requires VPN/public subnet)
+      DB_HOST: "${DB_HOST:-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-${POSTGRES_DB:-embeddings}}"
+      DB_USER: "${DB_USER:-${POSTGRES_USER:-postgres}}"
+      DB_PASSWORD: "${DB_PASSWORD:-${POSTGRES_PASSWORD:-postgres}}"
+      DB_SSLMODE: "${DB_SSLMODE:-disable}"
       # AWS SQS configuration (passed through from host)
       INGEST_QUEUE_URL: "${INGEST_QUEUE_URL:-}"
       AWS_REGION: "${AWS_REGION:-}"
