@@ -57,7 +57,6 @@ build-local:
 
 run-local: build-local
 	@echo "🚀 Running app locally with real database"
-	@echo "💡 Make sure you have AWS_PROFILE set and INGEST_QUEUE_URL in your environment"
 	@echo "🔐 Setting up database tunnel and credentials..."
 	@if ! command -v aws >/dev/null 2>&1; then \
 		echo "❌ AWS CLI not found. Please install it."; \
@@ -111,6 +110,46 @@ run-local: build-local
 		export DB_PORT="$${DB_PORT:-5432}"; \
 		export DB_SSLMODE="$${DB_SSLMODE:-require}"; \
 		echo "✅ Using provided DB credentials"; \
+	fi; \
+	if [ -z "$$INGEST_QUEUE_URL" ]; then \
+		echo "📦 Auto-fetching INGEST_QUEUE_URL from CDK stack outputs..."; \
+		if ! command -v aws >/dev/null 2>&1; then \
+			echo "⚠️  AWS CLI not found. Please set INGEST_QUEUE_URL manually."; \
+		else \
+			STACK_NAME=$$(aws cloudformation list-stacks \
+				--stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
+				--query "StackSummaries[?StackName == 'InfraStack'].StackName" \
+				--output text 2>/dev/null | head -n1) || STACK_NAME=""; \
+			if [ -n "$$STACK_NAME" ] && [ "$$STACK_NAME" != "None" ]; then \
+				QUEUE_URL=$$(aws cloudformation describe-stacks \
+					--stack-name "$$STACK_NAME" \
+					--query "Stacks[0].Outputs[?OutputKey=='IngestQueueUrl'].OutputValue" \
+					--output text 2>/dev/null) || QUEUE_URL=""; \
+				if [ -n "$$QUEUE_URL" ]; then \
+					export INGEST_QUEUE_URL="$$QUEUE_URL"; \
+					echo "✅ INGEST_QUEUE_URL fetched: $$INGEST_QUEUE_URL"; \
+				else \
+					echo "⚠️  INGEST_QUEUE_URL not found in stack outputs. Please set manually."; \
+				fi; \
+			else \
+				echo "⚠️  InfraStack not found. Please set INGEST_QUEUE_URL manually."; \
+			fi; \
+		fi; \
+	else \
+		echo "✅ Using provided INGEST_QUEUE_URL"; \
+	fi; \
+	if [ -z "$$AWS_REGION" ] && [ -z "$$AWS_DEFAULT_REGION" ]; then \
+		AWS_REGION=$$(aws configure get region 2>/dev/null || echo ""); \
+		if [ -n "$$AWS_REGION" ]; then \
+			export AWS_REGION; \
+			echo "✅ AWS_REGION set to: $$AWS_REGION"; \
+		else \
+			echo "⚠️  AWS_REGION not set. Please set AWS_REGION or AWS_DEFAULT_REGION"; \
+		fi; \
+	fi; \
+	if [ -z "$$OPENAI_SECRET" ]; then \
+		echo "⚠️  OPENAI_SECRET not set. Required for embedding generation."; \
+		echo "   Set it manually: export OPENAI_SECRET=your-key"; \
 	fi; \
 	echo "🌐 Starting database tunnel..."; \
 	if lsof -i :5432 >/dev/null 2>&1; then \
