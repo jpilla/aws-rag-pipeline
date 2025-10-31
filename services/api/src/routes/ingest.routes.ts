@@ -5,6 +5,7 @@ import { AwsSqsAdapter } from "../services/adapters/sqs.adapter";
 import { prismaService } from "../services/prisma.service";
 import { IngestRequest, IngestResponse, IngestSummary } from "../types/ingest.types";
 import { BatchStatusResponse, ChunkStatusInfo, ChunkStatus, FailureReason } from "../types/status.types";
+import { ChunkWithStatusRow } from "../types/database.types";
 import { createValidationMiddleware, sendValidationError } from "../middleware/validation";
 import { IngestValidators } from "../middleware/ingestValidation";
 import { logger } from "../lib/logger";
@@ -165,14 +166,14 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     }
 
     // Transform chunk data to our response format
-    const chunks: ChunkStatusInfo[] = chunkData.chunks.map((chunk: any) => ({
+    const chunks: ChunkStatusInfo[] = chunkData.chunks.map((chunk: ChunkWithStatusRow) => ({
       chunkId: chunk.id,
       chunkIndex: chunk.chunkIndex,
-      clientId: chunk.clientId,
+      clientId: chunk.clientId || '',
       status: chunk.status as ChunkStatus,
       failureReason: chunk.failureReason as FailureReason | undefined,
-      createdAt: chunk.createdAt,
-      updatedAt: chunk.updatedAt
+      createdAt: chunk.createdAt.toISOString(),
+      updatedAt: chunk.updatedAt.toISOString()
     }));
 
     // Determine overall batch status
