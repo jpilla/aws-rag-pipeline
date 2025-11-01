@@ -12,6 +12,8 @@ import { initializeIngestService } from "./routes/ingest.routes";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 let server: any = null; // Store server reference for graceful shutdown
+let isShuttingDown = false; // Flag to prevent concurrent shutdown attempts
+const activeConnections = new Set<any>(); // Track active HTTP connections
 
 app.disable('x-powered-by');
 
@@ -21,6 +23,18 @@ app.use(express.json({ limit: "1mb", type: ["application/json", "application/*+j
 
 app.use(commonValidationMiddleware);
 app.use(requestIdMiddleware);
+
+// Track active connections to wait for them during graceful shutdown
+app.use((req, res, next) => {
+  activeConnections.add(res);
+  res.on('finish', () => {
+    activeConnections.delete(res);
+  });
+  res.on('close', () => {
+    activeConnections.delete(res);
+  });
+  next();
+});
 
 app.use(healthRoutes);
 app.use(ingestRoutes);
@@ -83,6 +97,13 @@ async function initializeClients(): Promise<void> {
  * Graceful shutdown handler
  */
 async function gracefulShutdown(signal: string): Promise<void> {
+  // Prevent multiple shutdown attempts
+  if (isShuttingDown) {
+    logger.warn("Shutdown already in progress, ignoring signal");
+    return;
+  }
+
+  isShuttingDown = true;
   logger.info({ signal }, "Received shutdown signal, starting graceful shutdown...");
 
   // Set a timeout to force exit if graceful shutdown takes too long
@@ -95,12 +116,37 @@ async function gracefulShutdown(signal: string): Promise<void> {
     // Step 1: Stop accepting new connections
     if (server) {
       logger.info("Closing HTTP server to new connections...");
-      server.close(() => {
-        logger.info("HTTP server closed, no longer accepting new connections");
+
+      // Wrap server.close() in a promise to properly await it
+      await new Promise<void>((resolve, reject) => {
+        server.close((err: Error | undefined) => {
+          if (err) {
+            logger.error({ error: err }, "Error closing HTTP server");
+            reject(err);
+          } else {
+            logger.info("HTTP server closed, no longer accepting new connections");
+            resolve();
+          }
+        });
       });
+
+      // Step 2: Wait for active connections to finish
+      // Note: ALB should have stopped routing new requests to this task.
+      // We wait for in-flight requests to complete naturally.
+      const activeConnectionsCount = activeConnections.size;
+      if (activeConnectionsCount > 0) {
+        logger.info({ activeConnections: activeConnectionsCount }, "Waiting for active connections to finish...");
+
+        // Wait for all connections to finish (will be interrupted by overall timeout if needed)
+        while (activeConnections.size > 0) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        logger.info("All active connections closed");
+      }
     }
 
-    // Step 2: Close database connections
+    // Step 3: Close database connections
     logger.info("Closing database connections...");
     await prismaService.close();
     logger.info("Database connections closed");
@@ -120,6 +166,21 @@ async function gracefulShutdown(signal: string): Promise<void> {
 // Handle shutdown signals
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions and unhandled rejections
+// Note: These would crash the process anyway. We handle them here to ensure
+// cleanup (DB connections, in-flight requests) happens before exit.
+// Express does NOT handle these automatically - the process would exit immediately
+// without cleanup if we didn't catch them here.
+process.on('uncaughtException', async (error) => {
+  logger.error({ error, stack: error.stack }, "Uncaught exception, shutting down gracefully");
+  await gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', async (reason, promise) => {
+  logger.error({ reason, promise }, "Unhandled rejection, shutting down gracefully");
+  await gracefulShutdown('unhandledRejection');
+});
 
 // Start server after initializing clients
 async function startServer(): Promise<void> {
