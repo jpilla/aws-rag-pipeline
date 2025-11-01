@@ -117,41 +117,18 @@ describe('IngestService', () => {
   });
 
   describe('ingest with idempotency', () => {
-    it('whenExistingBatchFound_returnsTransformedResultsWithoutSending', async () => {
+    it('whenExistingBatchFound_returnsBatchIdWithEmptyArraysWithoutSending', async () => {
       db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
-      db.getChunksByBatchId.mockResolvedValue({
-        success: true,
-        chunks: [
-          { id: 'c1', clientId: 'x', chunkIndex: 0, status: 'INGESTED' },
-          { id: 'c2', clientId: 'y', chunkIndex: 1, status: 'FAILED', failureReason: 'bad' },
-        ],
-      });
 
       const out = await service.ingest([makeRecord()], 'idem-1', 'req-1');
       expect(out.batchId).toBe('b_exist');
-      expect(out.results).toHaveLength(1);
-      expect(out.errors).toHaveLength(1);
-      expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
-    });
-
-    it('whenBatchFoundButNoChunks_returnsExistingBatchWithEmptyResults', async () => {
-      db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
-      db.getChunksByBatchId.mockResolvedValue({ success: true, chunks: undefined });
-
-      const out = await service.ingest([makeRecord({ clientId: 'client-1', content: 'new' })], 'idem-2');
-      expect(out.batchId).toBe('b_exist');
+      // Simplified idempotency: return batchId with empty arrays
+      // Client should check GET endpoint for detailed status
       expect(out.results).toEqual([]);
       expect(out.errors).toEqual([]);
       expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
-    });
-
-    it('whenFetchChunksByBatchIdFails_throwsError', async () => {
-      db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
-      db.getChunksByBatchId.mockResolvedValue({ success: false, error: 'Database query failed' });
-
-      await expect(service.ingest([makeRecord({ clientId: 'client-1', content: 'new' })], 'idem-3'))
-        .rejects.toThrow('Failed to check idempotency for key idem-3');
-      expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
+      // Verify we don't query chunks anymore (simplified approach)
+      expect(db.getChunksByBatchId).not.toHaveBeenCalled();
     });
 
     it('whenIdempotencyLookupFails_throws', async () => {

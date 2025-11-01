@@ -65,6 +65,9 @@ services:
     volumes:
       # Mount AWS credentials directory for profile-based authentication
       - "${HOME}/.aws:/root/.aws:ro"
+    extra_hosts:
+      # Ensure host.docker.internal works (for database tunnel)
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
