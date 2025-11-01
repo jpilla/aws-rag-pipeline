@@ -396,6 +396,7 @@ export class IngestService {
 
   /**
    * Get existing batch by idempotency key
+   * Returns batchId if found, client should check GET endpoint for detailed status
    */
   private async getExistingBatch(idempotencyKey: string): Promise<{
     batchId: string;
@@ -403,82 +404,26 @@ export class IngestService {
     errors: IngestError[];
   } | null> {
     try {
-      const batchResult = await this.fetchBatchByKey(idempotencyKey);
-      if (!batchResult) {
+      const batchResult = await this.databaseService.getBatchByKey(idempotencyKey);
+      if (!batchResult.success || !batchResult.batchId) {
         return null;
       }
 
-      const chunkData = await this.fetchChunkDataByBatchId(batchResult.batchId);
-      // If chunks don't exist yet (lambda hasn't processed them), return batchId with empty results
-      // This is a valid idempotency match - the request was already processed
-      if (!chunkData || chunkData.length === 0) {
-        logger.info({ batchId: batchResult.batchId, idempotencyKey },
-          "Idempotency match found but chunks not yet processed");
-        return {
-          batchId: batchResult.batchId,
-          results: [],
-          errors: []
-        };
-      }
+      logger.info({ batchId: batchResult.batchId, idempotencyKey },
+        "Idempotency match found - returning batchId, client should check GET endpoint for status");
 
-      const { results, errors } = this.transformChunkDataToResults(chunkData);
-      return { batchId: batchResult.batchId, results, errors };
+      // For idempotency matches, return batchId with empty arrays
+      // Client should poll GET /v1/ingest/:batchId for detailed status
+      // This simplifies the code and aligns with 202 Accepted pattern
+      return {
+        batchId: batchResult.batchId,
+        results: [], // Status available via GET endpoint
+        errors: []
+      };
     } catch (error) {
       logger.error({ error, idempotencyKey }, "Failed to get existing batch for idempotency key");
       throw new Error(`Failed to check idempotency for key ${idempotencyKey}: ${error}`);
     }
-  }
-
-  private async fetchBatchByKey(idempotencyKey: string) {
-    const result = await this.databaseService.getBatchByKey(idempotencyKey);
-    return result.success && result.batchId ? { batchId: result.batchId } : null;
-  }
-
-  private async fetchChunkDataByBatchId(batchId: string): Promise<any[] | null> {
-    const chunkData = await this.databaseService.getChunksByBatchId(batchId);
-    // If database query fails (success: false), throw an error
-    if (!chunkData.success) {
-      throw new Error(`Failed to fetch chunks for batch ${batchId}: ${chunkData.error || 'Unknown error'}`);
-    }
-    // If query succeeds but chunks don't exist yet (empty array or undefined), return null
-    return chunkData.chunks || null;
-  }
-
-  private transformChunkDataToResults(chunks: ChunkData[]): { results: IngestResult[]; errors: IngestError[] } {
-    const results: IngestResult[] = [];
-    const errors: IngestError[] = [];
-
-    chunks.forEach(chunk => {
-      const chunkResult = this.createChunkResult(chunk);
-
-      if (chunk.status === 'ENQUEUED' || chunk.status === 'INGESTED') {
-        results.push(chunkResult);
-      } else if (chunk.status === 'FAILED') {
-        errors.push(this.createChunkError(chunk));
-      }
-    });
-
-    return { results, errors };
-  }
-
-  private createChunkResult(chunk: ChunkData): IngestResult {
-    return {
-      clientId: chunk.clientId,
-      originalIndex: chunk.chunkIndex,
-      chunkId: chunk.id,
-      status: chunk.status as "ENQUEUED" | "INGESTED" | "FAILED",
-    };
-  }
-
-  private createChunkError(chunk: ChunkData): IngestError {
-    return {
-      clientId: chunk.clientId,
-      originalIndex: chunk.chunkIndex,
-      chunkId: chunk.id,
-      status: "REJECTED",
-      code: "PROCESSING_ERROR",
-      message: chunk.failureReason || "Processing failed",
-    };
   }
 
   /**

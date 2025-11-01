@@ -74,35 +74,29 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
     }, "Processing ingest request");
 
     // Process the records
-    const { batchId, results, errors } = await service.ingest(records, idempotencyKey, req.requestId);
+    const { batchId, errors } = await service.ingest(records, idempotencyKey, req.requestId);
 
-    // Build summary - distinguish between actually enqueued vs already processed
-    const actuallyEnqueued = results.filter(r => r.status === 'ENQUEUED').length;
-    const alreadyProcessed = results.filter(r => r.status === 'INGESTED').length;
-
+    // Build summary - minimal info for 202 Accepted
+    // Detailed status (enqueued, processed, etc.) available via GET /v1/ingest/:batchId
     const summary: IngestSummary = {
       received: records.length,
-      enqueued: actuallyEnqueued,
       rejected: errors.length,
-      ...(alreadyProcessed > 0 && { alreadyProcessed }),
     };
 
     // Determine response status
-    // If we have a batchId but no results/errors, this is an idempotency match with chunks not yet processed
-    // Return 202 Accepted (consistent with original request) instead of 503 (service unavailable)
-    const isIdempotentMatchWithNoChunks = batchId && results.length === 0 && errors.length === 0;
-    const status = isIdempotentMatchWithNoChunks
-      ? 202  // Idempotency match, request was accepted (chunks may still be processing)
-      : results.length > 0
-        ? 202  // New request with successful enqueues
-        : 503; // Actual service issue
+    // 202 Accepted: request accepted for processing, check Location header for status
+    // 503: all records rejected immediately (actual service issue)
+    const status = errors.length < records.length || errors.length === 0
+      ? 202  // Accepted for processing (some or all records accepted)
+      : 503; // All records rejected immediately
 
-    // Send response
+    // Send response - minimal info for 202 Accepted
+    // Full status available via GET /v1/ingest/:batchId (Location header)
     const response: IngestResponse = {
       batchId,
       summary,
-      results,
-      errors,
+      errors, // Only immediate synchronous rejections (e.g., SQS validation failures)
+      // results array removed - check GET endpoint for detailed chunk status
     };
 
     const totalDuration = Date.now() - requestStartTime;

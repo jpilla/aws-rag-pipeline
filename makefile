@@ -14,6 +14,11 @@ help:
 	@echo "  make test-migration     - Test Prisma migrations (uses local postgres)"
 	@echo "  make stop-tunnel        - Stop the database tunnel"
 	@echo "  make destroy-local      - Stop tunnel and remove all containers"
+	@echo ""
+	@echo "Lambda debugging:"
+	@echo "  make debug-lambda       - Build and run Lambda locally with real DB (via tunnel)"
+	@echo "  make debug-lambda-no-build - Start Lambda without rebuilding"
+	@echo "  make stop-lambda-debug  - Stop Lambda debug container"
 
 # --- LOCAL DEV ---
 build-api:
@@ -55,121 +60,9 @@ build-local:
 	@echo "🔨 Building Docker images"
 	docker-compose build
 
-run-local: build-local
+run-local:
 	@echo "🚀 Running app locally with real database"
-	@echo "🔐 Setting up database tunnel and credentials..."
-	@if ! command -v aws >/dev/null 2>&1; then \
-		echo "❌ AWS CLI not found. Please install it."; \
-		exit 1; \
-	fi; \
-	if ! command -v jq >/dev/null 2>&1; then \
-		echo "❌ jq not found. Please install it: brew install jq"; \
-		exit 1; \
-	fi; \
-	export DB_HOST="host.docker.internal"; \
-	echo "✅ DB_HOST set to $$DB_HOST"; \
-	if [ -z "$$DB_USER" ] || [ -z "$$DB_PASSWORD" ]; then \
-		echo "📦 Auto-fetching database credentials from AWS Secrets Manager..."; \
-		if [ -z "$$AWS_REGION" ] && [ -z "$$AWS_DEFAULT_REGION" ]; then \
-			AWS_REGION=$$(aws configure get region 2>/dev/null || echo ""); \
-			if [ -z "$$AWS_REGION" ]; then \
-				echo "❌ AWS region not set. Please set AWS_REGION or AWS_DEFAULT_REGION"; \
-				exit 1; \
-			fi; \
-			export AWS_REGION; \
-		fi; \
-		SECRET_NAME="embeddings-db-credentials"; \
-		if ! aws secretsmanager describe-secret --secret-id "$$SECRET_NAME" >/dev/null 2>&1; then \
-			echo "❌ Secret '$$SECRET_NAME' not found. Make sure your CDK stack is deployed."; \
-			echo "   Run: cd infra && npx cdk deploy"; \
-			exit 1; \
-		fi; \
-		SECRET_VALUE=$$(aws secretsmanager get-secret-value \
-			--secret-id "$$SECRET_NAME" \
-			--query SecretString \
-			--output text 2>/dev/null) || { \
-			echo "❌ Failed to fetch secret value"; \
-			exit 1; \
-		}; \
-		DB_USER_VAL=$$(echo "$$SECRET_VALUE" | jq -r '.username' 2>/dev/null) || { \
-			echo "❌ Failed to parse username from secret"; \
-			exit 1; \
-		}; \
-		DB_PASSWORD_VAL=$$(echo "$$SECRET_VALUE" | jq -r '.password' 2>/dev/null) || { \
-			echo "❌ Failed to parse password from secret"; \
-			exit 1; \
-		}; \
-		export DB_USER="$$DB_USER_VAL"; \
-		export DB_PASSWORD="$$DB_PASSWORD_VAL"; \
-		export DB_NAME="$${DB_NAME:-embeddings}"; \
-		export DB_PORT="$${DB_PORT:-5432}"; \
-		export DB_SSLMODE="$${DB_SSLMODE:-require}"; \
-		echo "✅ Credentials fetched: DB_USER=$$DB_USER, DB_NAME=$$DB_NAME, DB_PORT=$$DB_PORT"; \
-	else \
-		export DB_NAME="$${DB_NAME:-embeddings}"; \
-		export DB_PORT="$${DB_PORT:-5432}"; \
-		export DB_SSLMODE="$${DB_SSLMODE:-require}"; \
-		echo "✅ Using provided DB credentials"; \
-	fi; \
-	if [ -z "$$INGEST_QUEUE_URL" ]; then \
-		echo "📦 Auto-fetching INGEST_QUEUE_URL from CDK stack outputs..."; \
-		if ! command -v aws >/dev/null 2>&1; then \
-			echo "⚠️  AWS CLI not found. Please set INGEST_QUEUE_URL manually."; \
-		else \
-			STACK_NAME=$$(aws cloudformation list-stacks \
-				--stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE \
-				--query "StackSummaries[?StackName == 'InfraStack'].StackName" \
-				--output text 2>/dev/null | head -n1) || STACK_NAME=""; \
-			if [ -n "$$STACK_NAME" ] && [ "$$STACK_NAME" != "None" ]; then \
-				QUEUE_URL=$$(aws cloudformation describe-stacks \
-					--stack-name "$$STACK_NAME" \
-					--query "Stacks[0].Outputs[?OutputKey=='IngestQueueUrl'].OutputValue" \
-					--output text 2>/dev/null) || QUEUE_URL=""; \
-				if [ -n "$$QUEUE_URL" ]; then \
-					export INGEST_QUEUE_URL="$$QUEUE_URL"; \
-					echo "✅ INGEST_QUEUE_URL fetched: $$INGEST_QUEUE_URL"; \
-				else \
-					echo "⚠️  INGEST_QUEUE_URL not found in stack outputs. Please set manually."; \
-				fi; \
-			else \
-				echo "⚠️  InfraStack not found. Please set INGEST_QUEUE_URL manually."; \
-			fi; \
-		fi; \
-	else \
-		echo "✅ Using provided INGEST_QUEUE_URL"; \
-	fi; \
-	if [ -z "$$AWS_REGION" ] && [ -z "$$AWS_DEFAULT_REGION" ]; then \
-		AWS_REGION=$$(aws configure get region 2>/dev/null || echo ""); \
-		if [ -n "$$AWS_REGION" ]; then \
-			export AWS_REGION; \
-			echo "✅ AWS_REGION set to: $$AWS_REGION"; \
-		else \
-			echo "⚠️  AWS_REGION not set. Please set AWS_REGION or AWS_DEFAULT_REGION"; \
-		fi; \
-	fi; \
-	if [ -z "$$OPENAI_SECRET" ]; then \
-		echo "⚠️  OPENAI_SECRET not set. Required for embedding generation."; \
-		echo "   Set it manually: export OPENAI_SECRET=your-key"; \
-	fi; \
-	echo "🌐 Starting database tunnel..."; \
-	if lsof -i :5432 >/dev/null 2>&1; then \
-		echo "✅ Tunnel already running on port 5432"; \
-	else \
-		echo "🚇 Starting tunnel in background..."; \
-		./scripts/tunnel-db.sh >/tmp/tunnel-db.log 2>&1 & \
-		TUNNEL_PID=$$!; \
-		echo $$TUNNEL_PID > /tmp/tunnel-db.pid; \
-		sleep 3; \
-		if ps -p $$TUNNEL_PID > /dev/null 2>&1; then \
-			echo "✅ Tunnel started (PID: $$TUNNEL_PID). Logs: /tmp/tunnel-db.log"; \
-			echo "⚠️  Run 'kill $$TUNNEL_PID' to stop the tunnel, or 'pkill -f tunnel-db.sh'"; \
-		else \
-			echo "❌ Tunnel failed to start. Check /tmp/tunnel-db.log"; \
-			exit 1; \
-		fi; \
-	fi; \
-	echo "✅ Starting services..."; \
-	docker-compose up -d
+	@bash scripts/run-local-api.sh
 
 run-debug: build-api
 	@echo "🐛 Starting app in debug mode with local Postgres"
@@ -227,3 +120,23 @@ cdk-diff:
 destroy-cloud-resources:
 	@echo "💣 Destroying CDK stack (includes ECR cleanup)"
 	cd infra && npx cdk destroy --force
+
+# ========== LAMBDA LOCAL DEBUGGING ==========
+
+.PHONY: debug-lambda stop-lambda-debug
+
+debug-lambda:
+	@echo "🐛 Setting up Lambda local debugging with real database..."
+	@./scripts/debug-lambda-local.sh
+
+debug-lambda-no-build:
+	@echo "🐛 Starting Lambda (skipping build)..."
+	@./scripts/debug-lambda-local.sh --no-build
+
+stop-lambda-debug:
+	@echo "🛑 Stopping Lambda debug container..."
+	@if docker ps --format '{{.Names}}' | grep -q '^lambda-ingest-debug$$'; then \
+		docker stop lambda-ingest-debug >/dev/null 2>&1 && echo "✅ Lambda stopped"; \
+	else \
+		echo "⚠️  Lambda container not running"; \
+	fi

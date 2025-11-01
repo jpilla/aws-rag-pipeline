@@ -58,14 +58,14 @@ export interface IngestError {
 
 export interface IngestSummary {
   received: number;
-  enqueued: number;
   rejected: number;
-  alreadyProcessed?: number;
+  // Note: enqueued/processed counts available via GET /v1/ingest/:batchId
 }
 
 export interface IngestResponse {
   batchId: string;
   summary: IngestSummary;
-  results: IngestResult[];
   errors: IngestError[];
+  // Note: results array removed - detailed chunk status available via GET /v1/ingest/:batchId
+  // This aligns with 202 Accepted pattern: return minimal info, client polls Location header
 }
