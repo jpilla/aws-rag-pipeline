@@ -58,24 +58,17 @@ test-migration:
 
 build-local:
 	@echo "🔨 Building Docker images"
-	docker-compose build
+	docker-compose build api
 
 run-local:
 	@echo "🚀 Running app locally with real database"
 	@bash scripts/run-local-api.sh
 
 run-debug: build-api
-	@echo "🐛 Starting app in debug mode with local Postgres"
-	@echo "💡 Make sure you have AWS_PROFILE set and INGEST_QUEUE_URL in your environment"
-	# Ensure postgres is running first
-	docker-compose up -d postgres
-	# Wait for postgres to be ready
-	@echo "⏳ Waiting for Postgres to be ready..."
-	@until docker-compose exec postgres pg_isready -U postgres -d embeddings >/dev/null 2>&1; do \
-		sleep 1; \
-	done
-	@echo "✅ Postgres ready, starting debug service..."
-	docker-compose --profile debug up -d api-debug
+	@echo "🐛 Running app in debug mode with real database"
+	@echo "🔨 Building Docker image for api-debug service..."
+	@docker-compose build api-debug
+	@bash scripts/run-local-api.sh --debug
 
 integration-tests:
 	@echo "🧪 Building and running integration tests against local service"
