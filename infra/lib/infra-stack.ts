@@ -1,12 +1,12 @@
 import * as path from 'path';
-import { Stack, StackProps, CfnOutput, SecretValue } from 'aws-cdk-lib';
+import { Stack, StackProps, CfnOutput, SecretValue, RemovalPolicy } from 'aws-cdk-lib';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 import { DockerImageAsset } from 'aws-cdk-lib/aws-ecr-assets';
 import { Construct } from 'constructs';
 
-// Import our modular constructs
 import { Networking } from './constructs/networking';
 import { EcsCluster } from './constructs/ecs-cluster';
 import { SecurityGroups } from './constructs/security-groups';
@@ -23,7 +23,7 @@ export class InfraStack extends Stack {
 
     // ---------- Container Images ----------
     const apiImageAsset = new DockerImageAsset(this, "ApiImage", {
-      directory: path.join(__dirname, "../.."), // points to the project root
+      directory: path.join(__dirname, "../.."),
       file: "services/api/Dockerfile",
     });
 
@@ -31,6 +31,34 @@ export class InfraStack extends Stack {
       directory: path.join(__dirname, "../../services/hello"),
       file: "Dockerfile",
     });
+
+    // Configure ECR repositories for cleanup
+    // DockerImageAsset creates repositories in the bootstrap stack, but we can configure lifecycle policies
+    const configureEcrCleanup = (repo: ecr.IRepository, assetName: string) => {
+      // Access the repository's node tree to find the CfnRepository
+      const repoConstruct = repo as unknown as Construct;
+      const cfnRepo = repoConstruct.node.defaultChild;
+
+      if (cfnRepo instanceof ecr.CfnRepository) {
+        // Set lifecycle policy to delete old images
+        // Note: Removal policy can't be set on bootstrap stack repositories
+        cfnRepo.addPropertyOverride('LifecyclePolicy', {
+          rules: [{
+            rulePriority: 1,
+            description: 'Delete all images when repository is deleted',
+            selection: {
+              tagStatus: 'any',
+            },
+            action: {
+              type: 'expire',
+            },
+          }],
+        });
+      }
+    };
+
+    configureEcrCleanup(apiImageAsset.repository, 'api');
+    configureEcrCleanup(helloImageAsset.repository, 'hello');
 
     // Convert to ECS images
     const apiImage = ecs.ContainerImage.fromDockerImageAsset(apiImageAsset);
@@ -86,6 +114,9 @@ export class InfraStack extends Stack {
       dbName: 'embeddings',
       openaiSecret: openaiSecret,
     });
+
+    // Configure ECR cleanup for Lambda image
+    configureEcrCleanup(ingestLambda.imageAsset.repository, 'lambda-ingest');
 
     // ---------- Hello Service (internal-only via Cloud Map) ----------
     const helloService = new HelloService(this, 'HelloService', {
