@@ -1,6 +1,8 @@
 import { Construct } from 'constructs';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cdk from 'aws-cdk-lib';
 import { Duration } from 'aws-cdk-lib';
 
 export interface HelloServiceProps {
@@ -26,11 +28,20 @@ export class HelloService extends Construct {
       memoryLimitMiB: 512,
     });
 
+    // Create log group with removal policy
+    const logGroup = new logs.LogGroup(this, 'HelloLogGroup', {
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      retention: logs.RetentionDays.ONE_WEEK,
+    });
+
     // Add container to task definition
     this.taskDefinition.addContainer('HelloContainer', {
       image,
       portMappings: [{ containerPort: 3001 }],
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'hello' }),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'hello',
+        logGroup,
+      }),
       environment: {
         PORT: '3001',
         SERVICE_DIR: 'services/hello',

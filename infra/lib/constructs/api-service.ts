@@ -3,6 +3,8 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cdk from 'aws-cdk-lib';
 import { Duration } from 'aws-cdk-lib';
 
 export interface ApiServiceProps {
@@ -66,7 +68,13 @@ export class ApiService extends Construct {
       taskImageOptions: {
         image,
         containerPort: 3000,
-        logDriver: ecs.LogDrivers.awsLogs({ streamPrefix: 'api' }),
+        logDriver: ecs.LogDrivers.awsLogs({
+          streamPrefix: 'api',
+          logGroup: new logs.LogGroup(this, 'ApiLogGroup', {
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            retention: logs.RetentionDays.ONE_WEEK,
+          }),
+        }),
         environment: env,
         secrets: {
           DB_USER: ecs.Secret.fromSecretsManager(databaseSecret, 'username'),
