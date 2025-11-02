@@ -77,7 +77,12 @@ services:
   api-debug:
     extends: api
     profiles: ["debug"]
-    command: ["node", "--enable-source-maps", "--inspect-brk=0.0.0.0:9229", "dist/server.js"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        export DATABASE_URL="postgresql://$$(node -e "process.stdout.write(encodeURIComponent(process.env.DB_USER))"):$$(node -e "process.stdout.write(encodeURIComponent(process.env.DB_PASSWORD))")@$$DB_HOST:5432/$$DB_NAME?sslmode=$${DB_SSLMODE:-require}"
+        npx prisma migrate deploy
+        exec node --enable-source-maps --inspect-brk=0.0.0.0:9229 dist/server.js
     environment:
       NODE_OPTIONS: ""
       # Ensure all environment variables from api are inherited
@@ -101,14 +106,15 @@ services:
       AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
       AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
       AWS_SESSION_TOKEN: "${AWS_SESSION_TOKEN:-}"
-      # OpenAI configuration (passed through from host)
       OPENAI_SECRET: "${OPENAI_SECRET:-}"
     ports:
       - "${API_HOST_PORT:-3000}:3000"
       - "9229:9229"
     volumes:
-      # Mount AWS credentials directory for profile-based authentication
       - "${HOME}/.aws:/root/.aws:ro"
+    depends_on:
+      hello:
+        condition: service_healthy
 
   integration-tests:
     build:
