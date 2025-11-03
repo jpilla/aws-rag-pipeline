@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { makeHelloClient } from "../helloClient";
-import { prismaService } from "../services/prisma.service";
+import { prismaService } from "../lib/prisma-client";
 
 const router = Router();
 const hello = makeHelloClient();
@@ -56,4 +56,3 @@ router.get("/db-health", async (_req, res) => {
 });
 
 export default router;
-

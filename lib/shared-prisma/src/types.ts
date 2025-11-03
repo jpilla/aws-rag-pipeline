@@ -35,3 +35,8 @@ export interface BatchStatusRow {
 export interface BatchIdRow {
   batchId: string;
 }
+
+export interface ExistingEmbeddingRow {
+  contentHash: string;
+  embedding: any;
+}

@@ -1,19 +1,20 @@
-import { PrismaService, createPrismaService, SqlQueryService } from '../../src/services/prisma.service';
+import { PrismaService, createPrismaService, SqlQueryService, EnvVarCredentialProvider } from '../src/index';
 import { PrismaClient } from '@prisma/client';
 
-jest.mock('../../src/lib/logger', () => ({
-  logger: {
+jest.mock('pino', () => ({
+  default: () => ({
     info: jest.fn(),
     error: jest.fn(),
     warn: jest.fn(),
     debug: jest.fn(),
-  },
+  }),
 }));
 
 describe('PrismaService', () => {
   let mockClient: jest.Mocked<PrismaClient>;
   let mockSqlQueries: jest.Mocked<SqlQueryService>;
   let service: PrismaService;
+  let mockCredentialProvider: jest.Mocked<EnvVarCredentialProvider>;
 
   beforeEach(() => {
     mockClient = {} as any;
@@ -24,10 +25,20 @@ describe('PrismaService', () => {
       getBatchStatus: jest.fn(),
       storeIdempotencyKey: jest.fn(),
       getBatchByKey: jest.fn(),
+      insertPlaceholderEmbeddings: jest.fn(),
+      insertChunks: jest.fn(),
+      getExistingEmbeddings: jest.fn(),
+      updateEmbeddings: jest.fn(),
+      updateChunksToIngested: jest.fn(),
+      updateChunksToFailed: jest.fn(),
     };
 
+    mockCredentialProvider = {
+      getCredentials: jest.fn().mockResolvedValue({ username: 'test', password: 'test' }),
+    } as any;
+
     // Mock getClient to return our mock client
-    service = createPrismaService(mockSqlQueries);
+    service = createPrismaService(mockCredentialProvider, mockSqlQueries);
     jest.spyOn(service, 'getClient' as any).mockResolvedValue(mockClient);
   });
 

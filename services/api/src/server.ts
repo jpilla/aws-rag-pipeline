@@ -5,7 +5,7 @@ import queryRoutes from "./routes/query.routes";
 import { requestIdMiddleware } from "./middleware/requestId";
 import { commonValidationMiddleware } from "./middleware/validation";
 import { logger } from "./lib/logger";
-import { prismaService } from "./services/prisma.service";
+import { prismaService } from "./lib/prisma-client";
 import { openaiService } from "./services/openai.service";
 import { initializeIngestService } from "./routes/ingest.routes";
 

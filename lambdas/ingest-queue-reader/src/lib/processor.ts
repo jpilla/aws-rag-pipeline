@@ -1,7 +1,11 @@
 import { logger } from "./logger.js";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
-import { PrismaClient } from "@prisma/client";
 import OpenAI from "openai";
+import {
+  PrismaService,
+  SecretsManagerCredentialProvider,
+  SqlQueries,
+} from "../../../../lib/shared-prisma/src/index.js";
 
 export type Payload = {
   chunkId: string;
@@ -15,9 +19,10 @@ export type Payload = {
 };
 
 // Global client instances - initialized once per Lambda container
-let prismaClient: PrismaClient | null = null;
+let prismaService: PrismaService | null = null;
 let openaiClient: OpenAI | null = null;
 let secretsClient: SecretsManagerClient | null = null;
+let sqlQueries: SqlQueries | null = null;
 let isInitialized: boolean = false;
 
 /**
@@ -68,8 +73,20 @@ export async function initializeClients(): Promise<void> {
     }
     secretsClient = new SecretsManagerClient({ region });
 
-    // Initialize Prisma client
-    await initializePrismaClient();
+    // Initialize Prisma service with Secrets Manager credential provider
+    const secretArn = process.env.DB_SECRET_ARN;
+    if (!secretArn) {
+      throw new Error("DB_SECRET_ARN environment variable not set");
+    }
+
+    sqlQueries = new SqlQueries();
+    const credentialProvider = new SecretsManagerCredentialProvider(secretsClient, secretArn);
+    prismaService = new PrismaService(credentialProvider, sqlQueries);
+
+    // Initialize Prisma client and test connection
+    const client = await prismaService.getClient();
+    await client.$queryRaw`SELECT 1`;
+    logger.info("Prisma client initialized and connected");
 
     // Initialize OpenAI client
     await initializeOpenAIClient();
@@ -79,53 +96,6 @@ export async function initializeClients(): Promise<void> {
   } catch (error) {
     logger.error({ error }, "Failed to initialize Lambda clients");
     throw error;
-  }
-}
-
-async function initializePrismaClient(): Promise<void> {
-  if (prismaClient) {
-    return;
-  }
-
-  const secretArn = process.env.DB_SECRET_ARN;
-  if (!secretArn) {
-    throw new Error("DB_SECRET_ARN environment variable not set");
-  }
-
-  const command = new GetSecretValueCommand({ SecretId: secretArn });
-  const secretValue = await secretsClient!.send(command);
-
-  if (!secretValue.SecretString) {
-    throw new Error("Failed to retrieve database credentials");
-  }
-
-  const credentials = JSON.parse(secretValue.SecretString);
-
-  // Construct DATABASE_URL like the API service does
-  const host = process.env.DB_HOST || 'localhost';
-  const port = process.env.DB_PORT || '5432';
-  const database = process.env.DB_NAME || 'embeddings';
-  const databaseUrl = `postgresql://${credentials.username}:${credentials.password}@${host}:${port}/${database}?sslmode=require`;
-
-  prismaClient = new PrismaClient({
-    datasources: {
-      db: {
-        url: databaseUrl,
-      },
-    },
-    log: ['error', 'warn'],
-  });
-
-  // Test the connection
-  try {
-    await prismaClient.$queryRaw`SELECT 1`;
-    logger.info({ databaseUrl: databaseUrl.replace(/:[^:]*@/, ':***@') }, "Prisma client initialized and connected");
-  } catch (connectionError) {
-    logger.error({
-      error: connectionError,
-      databaseUrl: databaseUrl.replace(/:[^:]*@/, ':***@')
-    }, "Failed to connect to database");
-    throw new Error(`Database connection failed: ${connectionError}`);
   }
 }
 
@@ -162,11 +132,11 @@ async function initializeOpenAIClient(): Promise<void> {
   logger.info("OpenAI client initialized");
 }
 
-async function getPrismaClient(): Promise<PrismaClient> {
-  if (!prismaClient) {
-    await initializePrismaClient();
+async function getPrismaService(): Promise<PrismaService> {
+  if (!prismaService) {
+    await initializeClients();
   }
-  return prismaClient!;
+  return prismaService!;
 }
 
 async function getOpenAIClient(): Promise<OpenAI> {
@@ -182,11 +152,11 @@ async function getOpenAIClient(): Promise<OpenAI> {
 export async function closeClients(): Promise<void> {
   const closePromises: Promise<void>[] = [];
 
-  if (prismaClient) {
+  if (prismaService) {
     closePromises.push(
-      prismaClient.$disconnect().then(() => {
+      prismaService.close().then(() => {
         logger.info("Prisma client disconnected");
-        prismaClient = null;
+        prismaService = null;
       }).catch((error: any) => {
         logger.error({ error }, "Failed to disconnect Prisma client");
       })
@@ -201,7 +171,6 @@ export async function closeClients(): Promise<void> {
 
   await Promise.all(closePromises);
 }
-
 
 async function generateEmbeddings(contents: string[]): Promise<number[][]> {
   const openai = await getOpenAIClient();
@@ -229,7 +198,9 @@ export type ProcessedRecord = {
 export async function processBatch(records: Array<{ messageId: string; payload: Payload }>): Promise<ProcessedRecord[]> {
   logger.info({ recordCount: records.length }, "Processing batch of SQS messages");
 
-  const prisma = await getPrismaClient();
+  const prisma = await getPrismaService();
+  const client = await prisma.getClient();
+  const queries = sqlQueries!;
   const results: ProcessedRecord[] = [];
 
   try {
@@ -260,32 +231,12 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
     const chunkIndexes = processedRecords.map(record => record.payload.originalIndex);
     const contents = processedRecords.map(record => record.processedContent);
 
-    await prisma.$transaction(async (tx: any) => {
+    await client.$transaction(async (tx: any) => {
       // Insert placeholder embeddings first (required for FK)
-      await tx.$executeRaw`
-        INSERT INTO "Embedding" ("contentHash", embedding, "createdAt")
-        SELECT
-          unnest(${contentHashes}::text[]) as "contentHash",
-          NULL as embedding,
-          NOW() as "createdAt"
-        ON CONFLICT ("contentHash") DO NOTHING
-      `;
+      await queries.insertPlaceholderEmbeddings(tx, contentHashes);
 
       // Insert chunks with ENQUEUED status
-      await tx.$executeRaw`
-        INSERT INTO "Chunk" (id, "contentHash", "batchId", "clientId", "chunkIndex", content, status, "createdAt", "updatedAt")
-        SELECT
-          unnest(${chunkIds}::text[]) as id,
-          unnest(${contentHashes}::text[]) as "contentHash",
-          unnest(${batchIds}::text[]) as "batchId",
-          unnest(${clientIds}::text[]) as "clientId",
-          unnest(${chunkIndexes}::int[]) as "chunkIndex",
-          unnest(${contents}::text[]) as content,
-          'ENQUEUED' as status,
-          NOW() as "createdAt",
-          NOW() as "updatedAt"
-        ON CONFLICT ("contentHash", "batchId") DO NOTHING
-      `;
+      await queries.insertChunks(tx, chunkIds, contentHashes, batchIds, clientIds, chunkIndexes, contents);
     });
 
     logger.info({ recordCount: processedRecords.length }, "Batch inserted chunks and placeholder embeddings");
@@ -293,10 +244,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
     // Phase 2: Check which embeddings need computation (outside transaction)
     logger.info({ contentHashes }, "Phase 2: Checking which embeddings need computation");
 
-    const existingEmbeddings = await prisma.$queryRaw<Array<{ contentHash: string; embedding: any }>>`
-      SELECT "contentHash", embedding::text as embedding FROM "Embedding"
-      WHERE "contentHash" = ANY(${contentHashes}) AND embedding IS NOT NULL
-    `;
+    const existingEmbeddings = await queries.getExistingEmbeddings(client, contentHashes);
 
     const existingContentHashes = new Set(
       existingEmbeddings.map((record: { contentHash: string }) => record.contentHash)
@@ -356,11 +304,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
         // Update failed chunks (short transaction)
         const failedChunkIds = recordsToProcess.map(record => record.chunkId);
         try {
-          await prisma.$executeRaw`
-            UPDATE "Chunk"
-            SET status = 'FAILED', "failureReason" = 'COMPUTE_EMBEDDINGS_FAILURE', "updatedAt" = NOW()
-            WHERE id = ANY(${failedChunkIds})
-          `;
+          await queries.updateChunksToFailed(client, failedChunkIds, 'COMPUTE_EMBEDDINGS_FAILURE');
         } catch (updateError) {
           logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
         }
@@ -388,33 +332,19 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
     }, "Phase 4: Updating database");
 
     try {
-      await prisma.$transaction(async (tx: any) => {
+      await client.$transaction(async (tx: any) => {
         // Update embeddings if we generated new ones
         if (embeddings && recordsToProcess.length > 0) {
           const contentHashes = recordsToProcess.map(record => record.contentHash);
           const embeddingStrings = embeddings.map(embedding => `[${embedding.join(',')}]`);
 
-          // Use subquery with unnest - avoids the UPDATE restriction
-          await tx.$executeRaw`
-            UPDATE "Embedding"
-            SET embedding = subq.embedding
-            FROM (
-              SELECT
-                unnest(${contentHashes}::text[]) as "contentHash",
-                unnest(${embeddingStrings}::vector[]) as embedding
-            ) AS subq
-            WHERE "Embedding"."contentHash" = subq."contentHash"
-          `;
+          await queries.updateEmbeddings(tx, contentHashes, embeddingStrings);
 
           logger.info({ updatedEmbeddings: recordsToProcess.length }, "Updated embeddings");
         }
 
         // Update all chunks to INGESTED status
-        await tx.$executeRaw`
-          UPDATE "Chunk"
-          SET status = 'INGESTED', "updatedAt" = NOW()
-          WHERE "contentHash" = ANY(${contentHashes})
-        `;
+        await queries.updateChunksToIngested(tx, contentHashes);
       });
 
       logger.info({ updatedCount: contentHashes.length }, "Batch updated chunk status to INGESTED");
@@ -425,11 +355,7 @@ export async function processBatch(records: Array<{ messageId: string; payload: 
       // Update failed chunks (short transaction)
       const failedChunkIds = processedRecords.map(record => record.chunkId);
       try {
-        await prisma.$executeRaw`
-          UPDATE "Chunk"
-          SET status = 'FAILED', "failureReason" = 'DATA_LAYER_FAILURE', "updatedAt" = NOW()
-          WHERE id = ANY(${failedChunkIds})
-        `;
+        await queries.updateChunksToFailed(client, failedChunkIds, 'DATA_LAYER_FAILURE');
       } catch (updateError) {
         logger.error({ error: updateError }, "Failed to update chunk status to FAILED");
       }

@@ -24,6 +24,7 @@ COPY services/api/src ./src
 COPY services/api/tests ./tests
 COPY prisma/schema.prisma ./prisma/schema.prisma
 COPY prisma/migrations/ ./prisma/migrations/
+COPY lib/shared-prisma/ ./lib/shared-prisma/
 
 # bring installed deps (incl. dev deps) from deps stage
 COPY --from=deps /app/node_modules ./node_modules

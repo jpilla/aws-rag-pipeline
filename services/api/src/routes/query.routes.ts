@@ -1,10 +1,11 @@
 import { Router, Request, Response } from "express";
-import { prismaService } from "../services/prisma.service";
+import { prismaService } from "../lib/prisma-client";
 import { openaiService } from "../services/openai.service";
 import { QueryRequest, QueryResponse, ContextChunk } from "../types/query.types";
 import { createValidationMiddleware } from "../middleware/validation";
 import { QueryValidators } from "../middleware/queryValidation";
 import { logger } from "../lib/logger";
+import type { SimilarEmbeddingRow } from "@shared-prisma/types";
 
 const router = Router();
 
@@ -46,8 +47,9 @@ router.post("/v1/query", createValidationMiddleware(QueryValidators.validateQuer
     }
 
     // 3. Prepare context from retrieved documents
-    const context = searchResult.embeddings
-      .map(emb => emb.content)
+    const embeddings: SimilarEmbeddingRow[] = searchResult.embeddings;
+    const context = embeddings
+      .map((emb: SimilarEmbeddingRow) => emb.content)
       .join('\n\n');
 
     // 4. Generate completion using OpenAI
@@ -58,7 +60,7 @@ router.post("/v1/query", createValidationMiddleware(QueryValidators.validateQuer
     const response: QueryResponse = {
       query,
       answer,
-      context: searchResult.embeddings.map(emb => ({
+      context: embeddings.map((emb: SimilarEmbeddingRow) => ({
         id: emb.id,
         docId: emb.docId,
         chunkIndex: emb.chunkIndex,

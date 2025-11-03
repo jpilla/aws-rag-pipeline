@@ -3,7 +3,6 @@
     "target": "ES2020",
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "rootDir": "src",
     "outDir": "dist",
     "strict": true,
     "esModuleInterop": true,
@@ -11,7 +10,14 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "inlineSourceMap": false,
-    "inlineSources": false
+    "inlineSources": false,
+    "baseUrl": ".",
+    "paths": {
+      "@shared-prisma/*": [
+        "./lib/shared-prisma/src/*",
+        "../../lib/shared-prisma/src/*"
+      ]
+    }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "../lib/shared-prisma/src/**/*"]
 }

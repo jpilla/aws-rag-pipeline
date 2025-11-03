@@ -1,5 +1,5 @@
 import { DatabaseService, ChunkData } from '../ingest.service';
-import { prismaService } from '../prisma.service';
+import { prismaService } from '../../lib/prisma-client';
 
 export class PrismaDatabaseAdapter implements DatabaseService {
   async getBatchByKey(idempotencyKey: string): Promise<{ success: boolean; batchId?: string }> {

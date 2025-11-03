@@ -1,19 +1,12 @@
 import { PrismaClient } from '@prisma/client';
-import { logger } from '../lib/logger';
-import { SqlQueries } from './queries/sql.queries';
+import { CredentialProvider, EnvVarCredentialProvider } from './credential-providers';
+import { SqlQueries } from './sql.queries';
 import {
   SimilarEmbeddingRow,
   ChunkWithStatusRow,
   BatchStatusRow,
-  BatchIdRow
-} from '../types/database.types';
-
-/**
- * Service interface for Prisma client operations
- */
-export interface PrismaClientService {
-  getClient(): Promise<PrismaClient>;
-}
+  BatchIdRow,
+} from './types';
 
 /**
  * Service interface for SQL query operations
@@ -25,6 +18,12 @@ export interface SqlQueryService {
   getBatchStatus(client: PrismaClient, batchId: string): Promise<BatchStatusRow[]>;
   storeIdempotencyKey(client: PrismaClient, idempotencyKey: string, batchId: string): Promise<void>;
   getBatchByKey(client: PrismaClient, idempotencyKey: string): Promise<BatchIdRow[]>;
+  insertPlaceholderEmbeddings(client: PrismaClient, contentHashes: string[]): Promise<void>;
+  insertChunks(client: PrismaClient, chunkIds: string[], contentHashes: string[], batchIds: string[], clientIds: string[], chunkIndexes: number[], contents: string[]): Promise<void>;
+  getExistingEmbeddings(client: PrismaClient, contentHashes: string[]): Promise<Array<{ contentHash: string; embedding: any }>>;
+  updateEmbeddings(client: PrismaClient, contentHashes: string[], embeddingStrings: string[]): Promise<void>;
+  updateChunksToIngested(client: PrismaClient, contentHashes: string[]): Promise<void>;
+  updateChunksToFailed(client: PrismaClient, chunkIds: string[], failureReason: string): Promise<void>;
 }
 
 /**
@@ -34,8 +33,10 @@ export class PrismaService {
   private client?: PrismaClient;
   private sqlQueries: SqlQueryService;
 
-  constructor(sqlQueries?: SqlQueryService) {
-    // Initialize Prisma client lazily
+  constructor(
+    private credentialProvider: CredentialProvider,
+    sqlQueries?: SqlQueryService
+  ) {
     this.sqlQueries = sqlQueries || new SqlQueries();
   }
 
@@ -44,20 +45,16 @@ export class PrismaService {
    */
   async getClient(): Promise<PrismaClient> {
     if (!this.client) {
+      const credentials = await this.credentialProvider.getCredentials();
+
       // Construct DATABASE_URL from environment variables
       const host = process.env.DB_HOST || 'localhost';
       const port = process.env.DB_PORT || '5432';
       const database = process.env.DB_NAME || 'embeddings';
-      const username = process.env.DB_USER;
-      const password = process.env.DB_PASSWORD;
-
-      if (!username || !password) {
-        throw new Error('DB_USER and DB_PASSWORD environment variables are required');
-      }
 
       // SSL mode: require for production (AWS RDS), disable for local development
       const sslMode = process.env.DB_SSLMODE || 'require';
-      const databaseUrl = `postgresql://${username}:${password}@${host}:${port}/${database}?sslmode=${sslMode}`;
+      const databaseUrl = `postgresql://${credentials.username}:${credentials.password}@${host}:${port}/${database}?sslmode=${sslMode}`;
 
       this.client = new PrismaClient({
         datasources: {
@@ -67,8 +64,6 @@ export class PrismaService {
         },
         log: ['error', 'warn'],
       });
-
-      logger.info({ host, port, database }, "Prisma client initialized");
     }
 
     return this.client;
@@ -86,7 +81,6 @@ export class PrismaService {
         message: 'Prisma database connection successful',
       };
     } catch (error: unknown) {
-      logger.error({ error }, "Prisma connection test failed");
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Prisma database connection failed',
@@ -130,7 +124,6 @@ export class PrismaService {
 
     return { isValid: true };
   }
-
 
   /**
    * Find similar embeddings using vector similarity search with pgvector
@@ -230,7 +223,6 @@ export class PrismaService {
     if (this.client) {
       await this.client.$disconnect();
       this.client = undefined;
-      logger.info('Prisma client disconnected');
     }
   }
 
@@ -267,7 +259,6 @@ export class PrismaService {
    * Create error response for search failures
    */
   private createSearchErrorResponse(error: unknown): { success: boolean; embeddings: SimilarEmbeddingRow[]; count: number; error: string } {
-    logger.error({ error }, "Vector similarity search failed");
     return {
       success: false,
       embeddings: [],
@@ -291,7 +282,6 @@ export class PrismaService {
    * Create error response for chunks query failures
    */
   private createChunksErrorResponse(error: unknown): { success: boolean; chunks: ChunkWithStatusRow[]; count: number; error: string } {
-    logger.error({ error }, "Batch chunks retrieval failed");
     return {
       success: false,
       chunks: [],
@@ -338,7 +328,6 @@ export class PrismaService {
     failedChunks: number;
     error: string;
   } {
-    logger.error({ error }, "Batch status retrieval failed");
     return {
       success: false,
       batchId,
@@ -354,7 +343,6 @@ export class PrismaService {
    * Create error response for storing idempotency key failures
    */
   private createStoreIdempotencyErrorResponse(error: unknown): { success: boolean; error: string } {
-    logger.error({ error }, "Failed to store idempotency key");
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to store idempotency key"
@@ -378,7 +366,6 @@ export class PrismaService {
    * Create error response for get batch by key failures
    */
   private createGetBatchByKeyErrorResponse(error: unknown): { success: boolean; error: string } {
-    logger.error({ error }, "Failed to get batch by idempotency key");
     return {
       success: false,
       error: error instanceof Error ? error.message : "Failed to get batch by idempotency key"
@@ -388,11 +375,10 @@ export class PrismaService {
 
 /**
  * Factory function to create PrismaService with injected dependencies
- * Dependencies should be created outside and injected for better testability
  */
-export function createPrismaService(sqlQueries?: SqlQueryService): PrismaService {
-  return new PrismaService(sqlQueries);
+export function createPrismaService(
+  credentialProvider: CredentialProvider,
+  sqlQueries?: SqlQueryService
+): PrismaService {
+  return new PrismaService(credentialProvider, sqlQueries);
 }
-
-// Export a singleton instance
-export const prismaService = new PrismaService();
