@@ -122,10 +122,6 @@ debug-lambda:
 	@echo "🐛 Setting up Lambda local debugging with real database..."
 	@./scripts/debug-lambda-local.sh
 
-debug-lambda-no-build:
-	@echo "🐛 Starting Lambda (skipping build)..."
-	@./scripts/debug-lambda-local.sh --no-build
-
 stop-lambda-debug:
 	@echo "🛑 Stopping Lambda debug container..."
 	@if docker ps --format '{{.Names}}' | grep -q '^lambda-ingest-debug$$'; then \

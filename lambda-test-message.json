@@ -1,0 +1,20 @@
+{
+  "Records": [
+    {
+      "messageId": "test-message-001",
+      "receiptHandle": "test-receipt-handle",
+      "body": "{\"chunkId\":\"chunk-test-001\",\"clientId\":\"client-test-001\",\"content\":\"The quick brown fox jumps over the lazy dog.\",\"metadata\":{\"requestId\":\"req-001\",\"source\":\"test\"},\"batchId\":\"batch-test-001\",\"enqueuedAt\":\"2024-01-01T00:00:00.000Z\",\"contentHash\":\"abc123def456\",\"originalIndex\":0}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "SentTimestamp": "1690000000000",
+        "SenderId": "test-sender",
+        "ApproximateFirstReceiveTimestamp": "1690000000001"
+      },
+      "messageAttributes": {},
+      "md5OfBody": "test-md5",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:ingest-queue",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

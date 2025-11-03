@@ -98,6 +98,8 @@ echo "📋 Database configuration:"
 echo "   DB_HOST=${DB_HOST}"
 echo "   DB_PORT=${DB_PORT}"
 echo "   DB_NAME=${DB_NAME}"
-echo "   DB_USER=${DB_USER}"
-echo "   DB_PASSWORD=***"
+if [ -n "${DB_USER:-}" ]; then
+  echo "   DB_USER=${DB_USER}"
+  echo "   DB_PASSWORD=***"
+fi
 echo "   DB_SSLMODE=${DB_SSLMODE}"

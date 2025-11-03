@@ -2,33 +2,56 @@ import type { SQSBatchItemFailure, SQSBatchResponse, SQSHandler } from "aws-lamb
 import { logger } from "./lib/logger.js";
 import { processBatch, type Payload, closeClients, initializeClients } from "./lib/processor.js";
 
-// Initialize clients immediately when the module loads (blocking)
+// In production: initialize at module load for faster cold starts
+// In debug mode: initialize lazily to allow debugger to attach
+const DEBUG_MODE = process.env.LAMBDA_DEBUG === 'true';
+
 let clientsInitialized = false;
 let clientsReady: Promise<void>;
 
-// Block on client initialization - this ensures clients are ready before handler can be called
-try {
-  // Use a synchronous approach to ensure clients are initialized before handler export
-  const initPromise = initializeClients();
-
-  // Set up a promise that resolves when clients are ready
-  clientsReady = initPromise.then(() => {
-    clientsInitialized = true;
-    logger.info("Lambda clients initialized at module load time");
-  }).catch((error) => {
-    logger.error({ error }, "Failed to initialize clients at module load time");
-    throw error; // Re-throw to prevent handler from being exported
-  });
-
-} catch (error) {
-  logger.error({ error }, "Critical failure during module initialization");
-  clientsReady = Promise.reject(error);
+// Module-load initialization for production
+if (!DEBUG_MODE) {
+  clientsReady = initializeClients()
+    .then(() => {
+      clientsInitialized = true;
+      logger.info("Lambda clients initialized at module load");
+    })
+    .catch((error) => {
+      logger.error({ error }, "Failed to initialize clients at module load");
+      clientsReady = Promise.reject(error);
+    });
+} else {
+  // Debug mode: lazy initialization
+  clientsReady = Promise.resolve();
 }
 
-// Export the handler - it will wait for clients to be ready
+// Lazy initialization for debug mode
+function ensureClientsReady(): Promise<void> {
+  if (clientsInitialized) {
+    return Promise.resolve();
+  }
+
+  if (!DEBUG_MODE && clientsReady) {
+    return clientsReady;
+  }
+
+  // Debug mode or first-time init: initialize now
+  clientsReady = initializeClients()
+    .then(() => {
+      clientsInitialized = true;
+      logger.info("Lambda clients initialized");
+    })
+    .catch((error) => {
+      logger.error({ error }, "Failed to initialize Lambda clients");
+      throw error;
+    });
+
+  return clientsReady;
+}
+
 export const handler = async (event: any): Promise<SQSBatchResponse> => {
   try {
-    await clientsReady;
+    await ensureClientsReady();
     return await processRequest(event);
   } catch (error) {
     logger.error({ error }, "Handler failed due to client initialization error");

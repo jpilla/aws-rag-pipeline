@@ -26,15 +26,21 @@ let isInitialized: boolean = false;
 function validateEnvironment(): void {
   const requiredEnvVars = [
     'DB_SECRET_ARN',
-    'OPENAI_SECRET_ARN',
     'DB_HOST',
     'DB_NAME'
   ];
+
+  // OPENAI can come from OPENAI_SECRET_ARN (production) or OPENAI_SECRET (local dev)
+  const hasOpenAI = !!(process.env.OPENAI_SECRET_ARN || process.env.OPENAI_SECRET);
 
   const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
   if (missingVars.length > 0) {
     throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  }
+
+  if (!hasOpenAI) {
+    throw new Error('Missing OpenAI configuration: either OPENAI_SECRET_ARN or OPENAI_SECRET must be set');
   }
 
   logger.info("Lambda environment variables validated");
@@ -55,8 +61,12 @@ export async function initializeClients(): Promise<void> {
     // Validate environment first
     validateEnvironment();
 
-    // Initialize Secrets Manager client
-    secretsClient = new SecretsManagerClient({});
+    // Initialize Secrets Manager client with region
+    const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+    if (!region) {
+      throw new Error("AWS_REGION or AWS_DEFAULT_REGION must be set");
+    }
+    secretsClient = new SecretsManagerClient({ region });
 
     // Initialize Prisma client
     await initializePrismaClient();
@@ -124,19 +134,26 @@ async function initializeOpenAIClient(): Promise<void> {
     return;
   }
 
-  const secretArn = process.env.OPENAI_SECRET_ARN;
-  if (!secretArn) {
-    throw new Error("OPENAI_SECRET_ARN environment variable not set");
+  let apiKey: string;
+
+  // Support both production (Secrets Manager) and local development (direct env var)
+  if (process.env.OPENAI_SECRET_ARN) {
+    // Production mode: fetch from Secrets Manager
+    const secretArn = process.env.OPENAI_SECRET_ARN;
+    const command = new GetSecretValueCommand({ SecretId: secretArn });
+    const secretValue = await secretsClient!.send(command);
+
+    if (!secretValue.SecretString) {
+      throw new Error("Failed to retrieve OpenAI API key");
+    }
+
+    apiKey = secretValue.SecretString;
+  } else if (process.env.OPENAI_SECRET) {
+    // Local development mode: use environment variable directly
+    apiKey = process.env.OPENAI_SECRET;
+  } else {
+    throw new Error("Either OPENAI_SECRET_ARN or OPENAI_SECRET must be set");
   }
-
-  const command = new GetSecretValueCommand({ SecretId: secretArn });
-  const secretValue = await secretsClient!.send(command);
-
-  if (!secretValue.SecretString) {
-    throw new Error("Failed to retrieve OpenAI API key");
-  }
-
-  const apiKey = secretValue.SecretString;
 
   openaiClient = new OpenAI({
     apiKey: apiKey,
