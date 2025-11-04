@@ -1,8 +1,20 @@
 # --- deps (install with lockfile) ---
 FROM node:20-alpine AS deps
 WORKDIR /app
+
+# Copy shared-prisma first and build it (needed for file: dependency)
+COPY lib/shared-prisma/package*.json ./lib/shared-prisma/
+COPY lib/shared-prisma/tsconfig.json ./lib/shared-prisma/
+COPY lib/shared-prisma/src ./lib/shared-prisma/src
+
+# Install shared-prisma dependencies and build it
+WORKDIR /app/lib/shared-prisma
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi && npm run build
+
+# Now install API dependencies
+WORKDIR /app
 COPY services/api/package*.json ./
-RUN npm ci
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # --- build (compile + prisma generate) ---
 FROM node:20-alpine AS build
@@ -29,13 +41,13 @@ COPY lib/shared-prisma/ ./lib/shared-prisma/
 # bring installed deps (incl. dev deps) from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
-# Install shared-prisma dependencies (they should be available from node_modules, but ensure jest is accessible)
-# Shared-prisma tests will use the API's jest/ts-jest from node_modules
+# Build shared-prisma first (needed for TypeScript compilation)
+RUN cd lib/shared-prisma && npm install && npm run build
 
 # generate prisma client (no-op if prisma isn't present)
 RUN [ -f prisma/schema.prisma ] && npx prisma generate || true
 
-# compile TS
+# compile TS (tsc-alias will rewrite path aliases after compilation)
 RUN npm run build
 
 # optionally run unit tests inside the image build; fails the build on test failure
@@ -62,6 +74,7 @@ RUN apk add --no-cache openssl libc6-compat
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/lib/shared-prisma ./lib/shared-prisma
 COPY --from=build /app/prisma/schema.prisma ./prisma/schema.prisma
 COPY --from=build /app/prisma/migrations/ ./prisma/migrations/
 
@@ -90,7 +103,7 @@ RUN printf '%s\n' \
     '  echo "[entrypoint] retry $i…"; i=$((i+1)); sleep 3;' \
     'done' \
     'echo "[entrypoint] Migrations complete. Starting API…"' \
-    'exec node dist/src/server.js' \
+    'exec node dist/server.js' \
     > /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 3000

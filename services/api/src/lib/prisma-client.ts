@@ -2,7 +2,7 @@
  * Singleton Prisma service instance for the API
  * Uses EnvVarCredentialProvider (reads DB_USER/DB_PASSWORD from environment)
  */
-import { PrismaService, EnvVarCredentialProvider } from '@shared-prisma/index';
+import { PrismaService, EnvVarCredentialProvider } from '../../../../lib/shared-prisma/dist/index';
 import { logger } from './logger';
 
 export const prismaService = new PrismaService(new EnvVarCredentialProvider());

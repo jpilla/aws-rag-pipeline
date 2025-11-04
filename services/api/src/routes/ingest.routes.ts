@@ -5,7 +5,7 @@ import { AwsSqsAdapter } from "../services/adapters/sqs.adapter";
 import { prismaService } from "../lib/prisma-client";
 import { IngestRequest, IngestResponse, IngestSummary } from "../types/ingest.types";
 import { BatchStatusResponse, ChunkStatusInfo, ChunkStatus, FailureReason } from "../types/status.types";
-import { ChunkWithStatusRow } from "@shared-prisma/types";
+import { ChunkWithStatusRow } from "shared-prisma/dist/types";
 import { createValidationMiddleware, sendValidationError } from "../middleware/validation";
 import { IngestValidators } from "../middleware/ingestValidation";
 import { logger } from "../lib/logger";
