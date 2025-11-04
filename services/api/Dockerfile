@@ -29,6 +29,9 @@ COPY lib/shared-prisma/ ./lib/shared-prisma/
 # bring installed deps (incl. dev deps) from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
+# Install shared-prisma dependencies (they should be available from node_modules, but ensure jest is accessible)
+# Shared-prisma tests will use the API's jest/ts-jest from node_modules
+
 # generate prisma client (no-op if prisma isn't present)
 RUN [ -f prisma/schema.prisma ] && npx prisma generate || true
 
@@ -37,7 +40,10 @@ RUN npm run build
 
 # optionally run unit tests inside the image build; fails the build on test failure
 RUN if [ "$RUN_TESTS" = "true" ]; then \
-  printf '\n[build] ==================== Running Unit Tests (Jest) ====================\n\n'; \
+  printf '\n[build] ==================== Running Shared-Prisma Tests ====================\n\n'; \
+  cd lib/shared-prisma && NODE_PATH=/app/node_modules /app/node_modules/.bin/jest --runInBand --verbose --colors || exit 1; \
+  cd /app && \
+  printf '\n[build] ==================== Running API Unit Tests ====================\n\n'; \
   npm run test -- --runInBand --verbose --colors; \
   else echo "[build] Skipping unit tests (RUN_TESTS=$RUN_TESTS)"; fi
 
