@@ -84,7 +84,7 @@ RUN printf '%s\n' \
     '  echo "[entrypoint] retry $i…"; i=$((i+1)); sleep 3;' \
     'done' \
     'echo "[entrypoint] Migrations complete. Starting API…"' \
-    'exec node dist/server.js' \
+    'exec node dist/src/server.js' \
     > /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 3000

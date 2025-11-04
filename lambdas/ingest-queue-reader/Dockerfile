@@ -11,6 +11,7 @@ RUN npm ci
 COPY lambdas/ingest-queue-reader/tsconfig.json ./
 COPY lambdas/ingest-queue-reader/src ./src
 COPY prisma/schema.prisma ./prisma/schema.prisma
+COPY lib/shared-prisma/ ./lib/shared-prisma/
 
 RUN npm run build
 

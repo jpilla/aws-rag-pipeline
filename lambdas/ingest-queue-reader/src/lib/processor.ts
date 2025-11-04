@@ -5,7 +5,7 @@ import {
   PrismaService,
   SecretsManagerCredentialProvider,
   SqlQueries,
-} from "../../../../lib/shared-prisma/src/index.js";
+} from "@shared-prisma/index";
 
 export type Payload = {
   chunkId: string;

@@ -10,7 +10,14 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "sourceMap": true,
-    "inlineSources": true
+    "inlineSources": true,
+    "baseUrl": ".",
+    "paths": {
+      "@shared-prisma/*": [
+        "./lib/shared-prisma/src/*",
+        "../../lib/shared-prisma/src/*"
+      ]
+    }
   },
   "include": ["src/**/*", "../../lib/shared-prisma/src/**/*"]
 }

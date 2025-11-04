@@ -1,3 +1,10 @@
+# ========== LOAD ENVIRONMENT VARIABLES ==========
+# Automatically load .env file if it exists
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
 # ========== LOCAL DEVELOPMENT ==========
 
 .PHONY: help build-api build-local run-local run-debug integration-tests prisma-migrate local-db test-migration stop-tunnel
