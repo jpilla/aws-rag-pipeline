@@ -117,23 +117,55 @@ describe('IngestService', () => {
   });
 
   describe('ingest with idempotency', () => {
-    it('whenExistingBatchFound_returnsBatchIdWithEmptyArraysWithoutSending', async () => {
+    it('whenExistingBatchFound_reusesBatchIdAndStillEnqueues', async () => {
       db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
+
+      // Mock SQS to return success (messages are re-enqueued, lambda deduplicates)
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        // Verify the batchId in the message is the existing one
+        const messageBody = JSON.parse(cmd.input.Entries[0].MessageBody);
+        expect(messageBody.batchId).toBe('b_exist');
+        return {
+          Successful: ids.map((Id: string) => ({ Id })),
+          Failed: [],
+        } as any;
+      });
 
       const out = await service.ingest([makeRecord()], 'idem-1', 'req-1');
       expect(out.batchId).toBe('b_exist');
-      // Simplified idempotency: return batchId with empty arrays
-      // Client should check GET endpoint for detailed status
-      expect(out.results).toEqual([]);
-      expect(out.errors).toEqual([]);
-      expect(sqs.sendMessageBatch).not.toHaveBeenCalled();
-      // Verify we don't query chunks anymore (simplified approach)
-      expect(db.getChunksByBatchId).not.toHaveBeenCalled();
+      // Records are still enqueued (lambda will deduplicate at DB level)
+      expect(out.results.length).toBe(1);
+      expect(out.errors.length).toBe(0);
+      expect(sqs.sendMessageBatch).toHaveBeenCalled();
+      // Idempotency key should NOT be stored again (already exists)
+      expect(db.storeIdempotencyKey).not.toHaveBeenCalled();
     });
 
     it('whenIdempotencyLookupFails_throws', async () => {
       db.getBatchByKey.mockRejectedValue(new Error('db down'));
       await expect(service.ingest([makeRecord()], 'idem-4')).rejects.toThrow('Failed to check idempotency');
+    });
+
+    it('whenExistingBatchFoundButSqsFails_returnsErrors', async () => {
+      db.getBatchByKey.mockResolvedValue({ success: true, batchId: 'b_exist' });
+
+      // SQS fails even with existing batch
+      sqs.sendMessageBatch.mockImplementation(async (cmd: any) => {
+        const ids = cmd.input.Entries.map((e: any) => e.Id);
+        return {
+          Successful: [],
+          Failed: ids.map((Id: string) => ({ Id, Code: 'MessageTooLarge', Message: 'too big' })),
+        } as any;
+      });
+
+      const out = await service.ingest([makeRecord()], 'idem-1');
+      expect(out.batchId).toBe('b_exist');
+      expect(out.results.length).toBe(0);
+      expect(out.errors.length).toBe(1);
+      expect(sqs.sendMessageBatch).toHaveBeenCalled();
+      // Should not store idempotency key again
+      expect(db.storeIdempotencyKey).not.toHaveBeenCalled();
     });
   });
 

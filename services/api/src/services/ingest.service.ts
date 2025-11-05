@@ -346,7 +346,7 @@ export class IngestService {
 
     const existingBatch = await this.getExistingBatch(idempotencyKey);
     if (existingBatch) {
-      logger.info({ batchId: existingBatch.batchId, idempotencyKey }, "Returning existing batch for idempotency key");
+      logger.info({ batchId: existingBatch.batchId, idempotencyKey }, "Found existing batch for idempotency key - will re-enqueue (lambda deduplicates)");
     }
     return existingBatch;
   }
@@ -369,6 +369,8 @@ export class IngestService {
 
   /**
    * Main entry point for ingesting records
+   * Note: Even with idempotency key match, we still enqueue records.
+   * The lambda consumer will deduplicate at the database level.
    */
   async ingest(records: IngestRecord[], idempotencyKey?: string, requestId?: string): Promise<{
     batchId: string;
@@ -377,18 +379,27 @@ export class IngestService {
   }> {
     const startTime = Date.now();
 
+    // Check for existing batch via idempotency key, but don't return early
+    // We'll still process and enqueue records - the lambda consumer will deduplicate
+    let batchId: string;
     const existingBatch = await this.tryGetExistingBatch(idempotencyKey);
     if (existingBatch) {
-      return existingBatch;
+      batchId = existingBatch.batchId;
+      logger.info({ batchId, idempotencyKey }, "Idempotency match found - re-enqueueing (lambda will deduplicate)");
+    } else {
+      batchId = this.generateBatchId();
     }
 
-    const batchId = this.generateBatchId();
     const processedRecords = this.prepareRecordsForProcessing(records);
 
     logger.info({ batchId, totalRecords: records.length, processedRecords: processedRecords.length }, "Starting ingest for batch");
 
     const { results, errors } = await this.processRecords(processedRecords, batchId, requestId);
-    await this.storeIdempotencyKeyIfProvided(idempotencyKey, batchId);
+
+    // Only store idempotency key if this is a new batch (not an existing one)
+    if (!existingBatch) {
+      await this.storeIdempotencyKeyIfProvided(idempotencyKey, batchId);
+    }
 
     this.logBatchCompletion(batchId, startTime, results.length, errors.length);
     return { batchId, results, errors };
