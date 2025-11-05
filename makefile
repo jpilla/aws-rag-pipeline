@@ -114,10 +114,8 @@ destroy-cloud-resources:
 .PHONY: build-lambda
 
 build-lambda:
-	@echo "🔨 Building Lambda service"
-	cd lambdas/ingest-queue-reader && npm run build
-	@echo "🧪 Running Lambda unit tests"
-	cd lambdas/ingest-queue-reader && npm test
+	@echo "🔨 Building Lambda Docker image (includes build and tests)"
+	docker build -f lambdas/ingest-queue-reader/Dockerfile -t ingest-queue-reader:latest .
 
 # ========== LAMBDA LOCAL DEBUGGING ==========
 

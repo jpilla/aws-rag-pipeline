@@ -9,10 +9,13 @@ COPY lambdas/ingest-queue-reader/package*.json ./
 RUN npm ci
 
 COPY lambdas/ingest-queue-reader/tsconfig.json ./
+COPY lambdas/ingest-queue-reader/jest.config.js ./
 COPY lambdas/ingest-queue-reader/src ./src
+COPY lambdas/ingest-queue-reader/tests ./tests
 COPY prisma/schema.prisma ./prisma/schema.prisma
 
 RUN npm run build
+RUN npm test
 
 # --- Runtime: Lambda Node.js 20 base image ---
 FROM public.ecr.aws/lambda/nodejs:20
