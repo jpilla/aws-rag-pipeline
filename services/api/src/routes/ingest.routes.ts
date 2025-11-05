@@ -74,24 +74,23 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
     }, "Processing ingest request");
 
     // Process the records
-    const { batchId, errors } = await service.ingest(records, idempotencyKey, req.requestId);
+    const { batchId, results, errors } = await service.ingest(records, idempotencyKey, req.requestId);
 
-    // Build summary - minimal info for 202 Accepted
-    // Detailed status (enqueued, processed, etc.) available via GET /v1/ingest/:batchId
+    // Determine response status
+    // If ANY SQS errors occurred (even partial), return 5xx so client retries everything
+    // 202 Accepted: all records successfully enqueued to SQS
+    // 503: any SQS failures occurred (client should retry entire request)
+    const hasSqsErrors = errors.length > 0;
+    const status = hasSqsErrors ? 503 : 202;
+
+    // Build summary
     const summary: IngestSummary = {
       received: records.length,
       rejected: errors.length,
+      enqueued: results.length,
     };
 
-    // Determine response status
-    // 202 Accepted: request accepted for processing, check Location header for status
-    // 503: all records rejected immediately (actual service issue)
-    const status = errors.length < records.length || errors.length === 0
-      ? 202  // Accepted for processing (some or all records accepted)
-      : 503; // All records rejected immediately
-
-    // Send response - minimal info for 202 Accepted
-    // Full status available via GET /v1/ingest/:batchId (Location header)
+    // Send response
     const response: IngestResponse = {
       batchId,
       summary,
@@ -173,15 +172,24 @@ router.get("/v1/ingest/:batchId", async (req: Request, res: Response) => {
     }
 
     // Transform chunk data to our response format
-    const chunks: ChunkStatusInfo[] = chunkData.chunks.map((chunk: ChunkWithStatusRow) => ({
-      chunkId: chunk.id,
-      chunkIndex: chunk.chunkIndex,
-      clientId: chunk.clientId || '',
-      status: chunk.status as ChunkStatus,
-      failureReason: chunk.failureReason as FailureReason | undefined,
-      createdAt: chunk.createdAt.toISOString(),
-      updatedAt: chunk.updatedAt.toISOString()
-    }));
+    // Only include failureReason if it's not null (i.e., there was an actual failure)
+    const chunks: ChunkStatusInfo[] = chunkData.chunks.map((chunk: ChunkWithStatusRow) => {
+      const chunkInfo: ChunkStatusInfo = {
+        chunkId: chunk.id,
+        chunkIndex: chunk.chunkIndex,
+        clientId: chunk.clientId || '',
+        status: chunk.status as ChunkStatus,
+        createdAt: chunk.createdAt.toISOString(),
+        updatedAt: chunk.updatedAt.toISOString()
+      };
+
+      // Only include failureReason if there was an actual failure
+      if (chunk.failureReason) {
+        chunkInfo.failureReason = chunk.failureReason as FailureReason;
+      }
+
+      return chunkInfo;
+    });
 
     // Determine overall batch status
     let overallStatus: 'PROCESSING' | 'COMPLETED' | 'FAILED';

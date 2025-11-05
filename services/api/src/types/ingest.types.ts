@@ -59,7 +59,8 @@ export interface IngestError {
 export interface IngestSummary {
   received: number;
   rejected: number;
-  // Note: enqueued/processed counts available via GET /v1/ingest/:batchId
+  enqueued: number;
+  // Note: processed counts available via GET /v1/ingest/:batchId
 }
 
 export interface IngestResponse {

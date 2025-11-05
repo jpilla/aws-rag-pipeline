@@ -1,6 +1,7 @@
 import axios from 'axios';
 import fs from 'fs';
 import readline from 'readline';
+import path from 'path';
 
 // TypeScript interfaces for API responses
 interface QueryResponse {
@@ -21,7 +22,16 @@ interface IngestRecord {
 }
 
 interface IngestResponse {
+  batchId: string;
   summary: any;
+}
+
+interface BatchStatusResponse {
+  batchId: string;
+  status: 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'NOT_FOUND';
+  totalChunks: number;
+  ingestedChunks: number;
+  failedChunks: number;
 }
 
 // Setting the base URL for axios makes it easier to make requests
@@ -34,10 +44,15 @@ const api = axios.create({
 describe('RAG Pipeline Integration', () => {
   it('should ingest Amazon reviews data and return relevant results', async () => {
     // 1. First, ingest the Amazon reviews data via API
-    //await ingestJsonlData('Amazon_Reviews_Short.jsonl', 10);
+    // In Docker, the file is copied to the working directory (/app)
+    // Locally, it's at the project root, so try both locations
+    const jsonlPath = path.join(process.cwd(), 'Amazon_Reviews_Short.jsonl');
+    const jsonlPathAlt = path.join(__dirname, '..', 'Amazon_Reviews_Short.jsonl');
+    const filePath = fs.existsSync(jsonlPath) ? jsonlPath : jsonlPathAlt;
+    const batchIds = await ingestJsonlData(filePath, 10);
 
-    // 2. Wait a bit for the data to be processed
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    // 2. Wait for all batches to be processed
+    await waitForBatchesToComplete(batchIds);
 
     // 3. Query the endpoint with a question about mini farm animals
     const queryResponse = await api.post<QueryResponse>('/v1/query', {
@@ -66,7 +81,7 @@ describe('RAG Pipeline Integration', () => {
 });
 
 // Helper function to ingest JSONL data via API
-async function ingestJsonlData(filePath: string, batchSize: number = 10): Promise<void> {
+async function ingestJsonlData(filePath: string, batchSize: number = 10): Promise<string[]> {
   const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
   const rl = readline.createInterface({
     input: fileStream,
@@ -75,6 +90,7 @@ async function ingestJsonlData(filePath: string, batchSize: number = 10): Promis
 
   let batch: IngestRecord[] = [];
   let batchIndex = 0;
+  const batchIds: string[] = [];
 
   for await (const line of rl) {
     const trimmedLine = line.trim();
@@ -93,7 +109,10 @@ async function ingestJsonlData(filePath: string, batchSize: number = 10): Promis
 
       // Send batch when it reaches the batch size
       if (batch.length >= batchSize) {
-        await sendBatch(batch, batchIndex);
+        const batchId = await sendBatch(batch, batchIndex);
+        if (batchId) {
+          batchIds.push(batchId);
+        }
         batch = [];
         batchIndex++;
       }
@@ -104,14 +123,63 @@ async function ingestJsonlData(filePath: string, batchSize: number = 10): Promis
 
   // Send remaining records
   if (batch.length > 0) {
-    await sendBatch(batch, batchIndex);
+    const batchId = await sendBatch(batch, batchIndex);
+    if (batchId) {
+      batchIds.push(batchId);
+    }
+  }
+
+  return batchIds;
+}
+
+async function sendBatch(records: IngestRecord[], batchIndex: number): Promise<string | null> {
+  try {
+    const response = await api.post<IngestResponse>('/v1/ingest', { records });
+    return response.data.batchId;
+  } catch (error: any) {
+    console.error(`Failed to send batch ${batchIndex}:`, error.message);
+    return null;
   }
 }
 
-async function sendBatch(records: IngestRecord[], batchIndex: number): Promise<void> {
-  try {
-    const response = await api.post<IngestResponse>('/v1/ingest', { records });
-  } catch (error: any) {
-    throw error;
+// Wait for all batches to complete processing
+async function waitForBatchesToComplete(batchIds: string[], maxWaitTime: number = 60000): Promise<void> {
+  const startTime = Date.now();
+  const pollInterval = 2000; // Poll every 2 seconds
+
+  while (Date.now() - startTime < maxWaitTime) {
+    let allComplete = true;
+
+    for (const batchId of batchIds) {
+      try {
+        const statusResponse = await api.get<BatchStatusResponse>(`/v1/ingest/${batchId}`);
+        const status = statusResponse.data.status;
+
+        if (status === 'FAILED') {
+          throw new Error(`Batch ${batchId} failed during processing`);
+        }
+
+        if (status !== 'COMPLETED') {
+          allComplete = false;
+          break;
+        }
+      } catch (error: any) {
+        if (error.response?.status === 404) {
+          // Batch not found yet, keep waiting
+          allComplete = false;
+          break;
+        }
+        throw error;
+      }
+    }
+
+    if (allComplete) {
+      return;
+    }
+
+    // Wait before polling again
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
+
+  throw new Error(`Batches did not complete within ${maxWaitTime}ms`);
 }
