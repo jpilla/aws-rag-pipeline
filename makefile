@@ -95,7 +95,16 @@ destroy-local: stop-tunnel
 
 # ========== AWS DEPLOYMENT ==========
 
-.PHONY: deploy-cloud-resources cdk-diff destroy-cloud-resources destroy-local
+.PHONY: bootstrap-cloud-resources deploy-cloud-resources cdk-diff destroy-cloud-resources destroy-local
+
+bootstrap-cloud-resources:
+	@echo "🔧 Bootstrapping CDK environment (first time only)"
+	@echo "Creating RDS service-linked role..."
+	@aws iam create-service-linked-role --aws-service-name rds.amazonaws.com 2>/dev/null || \
+		echo "⚠️  RDS service-linked role may already exist (this is OK)"
+	@echo "Bootstrapping CDK..."
+	@cd infra && npx cdk bootstrap
+	@echo "✅ Bootstrap complete!"
 
 deploy-cloud-resources:
 	@echo "🚢 Deploying with CDK (CDK will handle ECR and image management)"
