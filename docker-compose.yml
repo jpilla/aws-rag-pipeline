@@ -1,5 +1,5 @@
 services:
-  # Local PostgreSQL database for development and testing
+  # Local PostgreSQL database for testing migrations
   postgres:
     image: pgvector/pgvector:pg17
     environment:
@@ -69,8 +69,6 @@ services:
       # Ensure host.docker.internal works (for database tunnel)
       - "host.docker.internal:host-gateway"
     depends_on:
-      postgres:
-        condition: service_healthy
       hello:
         condition: service_healthy
 

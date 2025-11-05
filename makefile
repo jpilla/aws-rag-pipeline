@@ -1,6 +1,6 @@
 # ========== LOCAL DEVELOPMENT ==========
 
-.PHONY: help build-api build-local run-local run-debug integration-tests prisma-migrate local-db test-migration stop-tunnel
+.PHONY: help build-api build-local run-local run-debug integration-tests prisma-migrate test-migration stop-tunnel build-lambda
 
 help:
 	@echo "Available targets:"
@@ -10,12 +10,12 @@ help:
 	@echo "  make run-debug          - Build and run the app in debug mode"
 	@echo "  make integration-tests  - Run integration tests"
 	@echo "  make prisma-migrate     - Create new Prisma migration (usage: make prisma-migrate migration_name)"
-	@echo "  make local-db           - Set up local development environment"
 	@echo "  make test-migration     - Test Prisma migrations (uses local postgres)"
 	@echo "  make stop-tunnel        - Stop the database tunnel"
 	@echo "  make destroy-local      - Stop tunnel and remove all containers"
 	@echo ""
-	@echo "Lambda debugging:"
+	@echo "Lambda:"
+	@echo "  make build-lambda       - Build Lambda service and run tests"
 	@echo "  make debug-lambda       - Build and run Lambda locally with real DB (via tunnel)"
 	@echo "  make debug-lambda-no-build - Start Lambda without rebuilding"
 	@echo "  make stop-lambda-debug  - Stop Lambda debug container"
@@ -35,11 +35,6 @@ prisma-migrate:
 	@echo "📝 Creating new Prisma migration"
 	# filter-out removes 'prisma-migrate' from arguments, passes the rest to script
 	./scripts/prisma-make.sh $(filter-out prisma-migrate,$(MAKECMDGOALS))
-
-# --- FAST DEVELOPMENT WORKFLOW ---
-local-db:
-	@echo "🚀 Setting up local development environment"
-	./scripts/dev.sh setup
 
 test-migration:
 	@echo "🧪 Testing Prisma migrations (fast feedback)"
@@ -113,6 +108,16 @@ cdk-diff:
 destroy-cloud-resources:
 	@echo "💣 Destroying CDK stack (includes ECR cleanup)"
 	cd infra && npx cdk destroy --force
+
+# ========== LAMBDA BUILD & TEST ==========
+
+.PHONY: build-lambda
+
+build-lambda:
+	@echo "🔨 Building Lambda service"
+	cd lambdas/ingest-queue-reader && npm run build
+	@echo "🧪 Running Lambda unit tests"
+	cd lambdas/ingest-queue-reader && npm test
 
 # ========== LAMBDA LOCAL DEBUGGING ==========
 
