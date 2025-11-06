@@ -174,12 +174,15 @@ Content-Type: application/json; charset=utf-8
     "received": 2,
     "enqueued": 2,
     "rejected": 0
-  },
-  "errors": []
+  }
 }
 ```
 
-The `Location` header points to the batch status endpoint where you can check detailed chunk status. The `Request-Id` header can be used for tracing requests across services. Note that detailed `results` and `errors` arrays are not included in the POST response - check the GET endpoint for full details.
+The `Location` header points to the batch status endpoint where you can check detailed chunk status. The `Request-Id` header can be used for tracing requests across services.
+
+**Response Status Codes:**
+- **202 Accepted**: All records were successfully enqueued for processing
+- **503 Service Unavailable**: Some or all records failed to enqueue (infrastructure issue). Retry the entire request; if you peek at the GET endpoint you may see partial progress, but assume the batch needs to be resent.
 
 ### Check Batch Status
 
@@ -261,7 +264,7 @@ curl -X POST http://your-api-endpoint/v1/query \
       "distance": 0.5307765639753981
     }
   ],
-  "matches": 5
+  "matches": 1
 }
 ```
 
@@ -325,6 +328,8 @@ curl -X POST http://your-api-endpoint/v1/query \
                         └─────────────────┘
 ```
 
+**Note:** The diagram shows the ingestion flow. The query endpoint (`POST /v1/query`) also calls OpenAI API (for text completion) after performing vector search in RDS.
+
 **Components:**
 - **ALB** - Application Load Balancer for public API access
 - **ECS Fargate** - Containerized API service (Express.js)
@@ -381,7 +386,7 @@ When ingesting Amazon review data, if the same review appears in multiple batche
 
 ---
 
-## 📦 Amazon Reviews Data Pipeline
+## 📦 Amazon Reviews Ingestion
 
 This project includes scripts to process and ingest Amazon Review data from the [UCSD Amazon Review Dataset](https://cseweb.ucsd.edu/~jmcauley/datasets/amazon_v2/).
 
@@ -399,7 +404,7 @@ wget https://mcauleylab.ucsd.edu/public_datasets/data/amazon_v2/metaFiles2/meta_
 
 ### Step 2: Prepare the Data
 
-The `join_reviews.py` script combines review data with product metadata and formats it for embedding:
+The `join_reviews.py` script combines review data with product metadata and formats it for ingestion:
 
 ```bash
 python3 scripts/join_reviews.py \
@@ -446,7 +451,7 @@ node scripts/ingest_jsonl.js \
 
 **Important Notes:**
 - **Dataset Size:** Ingesting the **entire** Amazon Reviews dataset will take a considerable amount of time. For testing purposes, you should either interrupt the script early or use the provided `Amazon_Reviews_Short.jsonl` file instead.
-- **AWS Free Tier Limits:** AWS Free Tier accounts are capped at **1 million Lambda invocations per month** (not per day). However, when processing large datasets, you may hit rate limits. The ingest script writes messages to SQS faster than Lambda can process them, so you'll need to monitor Lambda invocation counts and potentially throttle the ingest script's concurrency.
+- **AWS Lambda Limits:** The Free Tier gives you **1 million Lambda invocations per month**, but the default **1,000 concurrent executions per region** is what you'll hit first. When you blast SQS with a big dataset, Lambda will fan out until it hits that concurrency ceiling, so watch the CloudWatch metrics and tune the ingest script's `--concurrency` (or add back-pressure) if throttling starts showing up.
 - **Recommended Approach:** Start with `Amazon_Reviews_Short.jsonl` to test the full pipeline, then scale up incrementally if you want to process larger datasets.
 
 **Features:**
@@ -480,7 +485,7 @@ This project uses a local development approach that prioritizes working with **r
 **The Tradeoff:**
 - For local development, you tunnel into the **real database** via SSM Session Manager (see below). The local API connects to the actual RDS instance through this tunnel.
 - The local API can send messages to SQS, but the Lambda consumer must be tested separately by providing an SQS message payload directly (see Lambda Development section).
-- This means you can't run a full end-to-end test entirely on your local machine—it's a conscious tradeoff for simplicity. The approach is to test each piece independently during local development, and run end-to-end tests where everything is deployed in real AWS.
+- This means you can't run a full end-to-end test entirely on your local machine—it's a conscious tradeoff for simplicity. The approach is to test the api and the lambda queue consumer independently during local development, and run end-to-end tests where everything is deployed in real AWS.
 
 ### Local Development
 
@@ -556,7 +561,7 @@ make debug-lambda
 
 This project uses data from the Amazon Review Dataset (2018) provided by UCSD. If you use this dataset or the scripts provided here, please cite:
 
-**Justifying recommendations using distantly-labeled reviews and fined-grained aspects**
+**Justifying recommendations using distantly-labeled reviews and fine-grained aspects**
 Jianmo Ni, Jiacheng Li, Julian McAuley
 _Empirical Methods in Natural Language Processing (EMNLP)_, 2019
 [PDF](https://cseweb.ucsd.edu/~jmcauley/pdfs/emnlp2019.pdf) | [Dataset](https://cseweb.ucsd.edu/~jmcauley/datasets/amazon_v2/)
@@ -564,7 +569,7 @@ _Empirical Methods in Natural Language Processing (EMNLP)_, 2019
 **BibTeX:**
 ```bibtex
 @inproceedings{ni2019justifying,
-  title={Justifying recommendations using distantly-labeled reviews and fined-grained aspects},
+  title={Justifying recommendations using distantly-labeled reviews and fine-grained aspects},
   author={Ni, Jianmo and Li, Jiacheng and McAuley, Julian},
   booktitle={Proceedings of EMNLP},
   year={2019}
@@ -581,11 +586,11 @@ _Empirical Methods in Natural Language Processing (EMNLP)_, 2019
 
 <a name="footnote-1"></a>
 
-¹ **"Production-like," not "production ready"** Many production-grade features are intentionally omitted (HTTPS, authentication, rate limiting, comprehensive test coverage, ECS task autoscaling, OpenAPI specs, bulletproof logging and monitoring, etc.)—I've done those at work. I've asked AI tools to show me how this stuff basically looks in the tech stack I'm using, and I'm content to leave it there for now.
+¹ **"Production-like," not "production ready"** Many production-grade features are intentionally omitted (HTTPS, auth(z&n), rate limiting, comprehensive test coverage, ECS task autoscaling, OpenAPI specs, bulletproof logging and monitoring, etc.)—I've done those at work. I've asked AI tools to show me how this stuff basically looks in the tech stack I'm using, and I'm content to leave it there for now.
 
 <a name="footnote-2"></a>
 
-² **Yes, ECS, not EKS.** I'm no infrastructure expert, but I've seen and heard about migrations to EKS taking an eternity. I've heard tons of people complain about how hard it is just to get one service to talk to another service. Where possible, my philosophy is to embrace off-the-shelf AWS native tools. ECS seems far simpler and totally AWS native, and makes it quite easy to orchestrate containers and get services talking to each other—seems to give about 80% of the value of Kubernetes with 20% of the pain for simple backend services. Of course, I believe EKS can be great with support from a killer platform team.
+² **Yes, ECS, not EKS.** I'm no infrastructure expert, but I've seen and heard about migrations to EKS taking an eternity. I've heard tons of people complain about how hard it is just to get one service to talk to another service in EKS. Where possible, my philosophy is to embrace off-the-shelf AWS native tools. ECS seems far simpler and totally AWS native, and makes it quite easy to orchestrate containers and get services talking to each other—seems to give about 80% of the value of Kubernetes with 20% of the pain for simple backend services. Of course, I believe EKS can be great with support from a killer platform team.
 
 <a name="footnote-3"></a>
 
