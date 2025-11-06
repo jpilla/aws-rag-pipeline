@@ -280,17 +280,6 @@ curl -X POST http://your-api-endpoint/v1/query \
 
 ![RAG pipeline architecture diagram](architecture-diagram.png)
 
-**Note:** The diagram shows the ingestion flow. The query endpoint (`POST /v1/query`) also calls OpenAI API (for text completion) after performing vector search in RDS.
-
-**Components:**
-- **ALB** - Application Load Balancer for public API access
-- **ECS Fargate** - Containerized API service (Express.js)
-- **SQS** - Async message queue for ingestion pipeline
-- **Lambda** - Event-driven embedding processor (containerized)
-- **RDS PostgreSQL** - Vector database with pgvector extension
-- **RDS Proxy** - Connection pooling and secret rotation
-- **VPC** - Isolated networking with private subnets for DB
-
 ---
 
 <a id="key-design-decisions"></a>
