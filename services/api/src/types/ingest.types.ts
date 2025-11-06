@@ -66,7 +66,6 @@ export interface IngestSummary {
 export interface IngestResponse {
   batchId: string;
   summary: IngestSummary;
-  errors: IngestError[];
-  // Note: results array removed - detailed chunk status available via GET /v1/ingest/:batchId
+  // Note: results and errors arrays removed - detailed chunk status available via GET /v1/ingest/:batchId
   // This aligns with 202 Accepted pattern: return minimal info, client polls Location header
 }

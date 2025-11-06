@@ -76,10 +76,8 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
     // Process the records
     const { batchId, results, errors } = await service.ingest(records, idempotencyKey, req.requestId);
 
-    // Determine response status
-    // If ANY SQS errors occurred (even partial), return 5xx so client retries everything
     // 202 Accepted: all records successfully enqueued to SQS
-    // 503: any SQS failures occurred (client should retry entire request)
+    // 503 Service Unavailable: some or all records failed to enqueue (infrastructure issue)
     const hasSqsErrors = errors.length > 0;
     const status = hasSqsErrors ? 503 : 202;
 
@@ -90,12 +88,11 @@ router.post("/v1/ingest", createValidationMiddleware(IngestValidators.validateIn
       enqueued: results.length,
     };
 
-    // Send response
+    // Send response - don't expose SQS error details (implementation detail)
+    // Client can check GET /v1/ingest/:batchId for per-chunk status
     const response: IngestResponse = {
       batchId,
       summary,
-      errors, // Only immediate synchronous rejections (e.g., SQS validation failures)
-      // results array removed - check GET endpoint for detailed chunk status
     };
 
     const totalDuration = Date.now() - requestStartTime;
