@@ -1,6 +1,6 @@
 # RAG API with Express, ECS, and Postgres
 
-> A production-ready Retrieval-Augmented Generation (RAG) API built with TypeScript, Express, AWS ECS/Fargate, PostgreSQL with pgvector, and OpenAI embeddings. Designed for scalable document ingestion and semantic search.
+> A Retrieval-Augmented Generation (RAG) API built with TypeScript, Express, AWS ECS/Fargate, PostgreSQL with pgvector, and OpenAI embeddings. Designed for scalable document ingestion and semantic search.
 
 ---
 
@@ -35,7 +35,7 @@ The system is designed to handle batch ingestion of documents (like Amazon produ
 - ✅ Async processing pipeline with SQS and Lambda
 - ✅ Vector similarity search with configurable thresholds
 - ✅ Batch status tracking and monitoring
-- ✅ Production-like error handling and retries[¹](#footnotes)
+- ✅ Production-like error handling and retries[¹](#footnote-1)
 
 ---
 
@@ -45,17 +45,15 @@ This project was built as a learning exercise to gain hands-on experience with:
 
 - **TypeScript & Node.js** - Modern JavaScript development with type safety
 - **Express.js** - Building RESTful APIs and middleware patterns
-- **AWS ECS/Fargate** - Container orchestration and serverless compute
+- **AWS ECS/Fargate[²](#footnote-2)** - Container orchestration and serverless compute
 - **PostgreSQL & pgvector** - Vector databases and similarity search
 - **OpenAI API** - Embedding generation and text completion
 - **Prisma** - Database migrations and ORM with migration history tracking
 - **Development Flow** - Setting up a productive local → AWS development workflow
 - **Testing & Debugging** - Integration tests, debugging in containers, and observability
-- **AI-Assisted Development**[⁶](#footnotes) - When I started my time off from work to spend time with my children, AI coding tools (like Cursor, GitHub Copilot) were not yet ubiquitous. I wanted to see what "vibe coding" was all about, and I was totally blown away. Modern AI tools were extremely helpful in understanding how these technologies worked and how to effectively write the code, especially for rapidly learning new frameworks and patterns.
+- **AI-Assisted Development** - When I started my time off from work to spend time with my children, AI coding tools (like Cursor, GitHub Copilot) were not yet ubiquitous. I wanted to see what "vibe coding" was all about, and I was totally blown away. Modern AI tools were extremely helpful in understanding how these technologies worked and how to effectively write the code, especially for rapidly learning new frameworks and patterns.
 
-The goal was to build something production-ready while learning the full stack, from API design to infrastructure deployment.
-
-**Note:** Many production-grade features are intentionally omitted[⁵](#footnotes) (HTTPS, authentication, rate limiting, super-duper comprehensive test coverage, ECS task autoscaling, OpenAPI specs, bulletproof logging and monitoring, etc.) - I've done those at work. This project is focused on learning the specific technologies and patterns listed above.
+Before working on this, I had no experience with any of the above. I was quite comfortable with the "big company" AWS tech stack (Java, DynamoDb, SQS, etc.), but I wanted to branch out, especially with the RDBMS. The goal was to build something that could go to production without much tweaking[¹](#footnote-1) while learning the full stack, from API design to infrastructure deployment.
 
 ---
 
@@ -65,10 +63,11 @@ The goal was to build something production-ready while learning the full stack, 
 
 Before deploying, ensure you have the following installed and configured:
 
-- **Docker** - For container builds and local development
+- **Docker** - For container builds and local development (Docker daemon must be running)
 - **AWS CLI** - Configured with appropriate credentials
-- **AWS CDK** - `npm install -g aws-cdk` or `npx aws-cdk`
+- **AWS CDK** - `npm install -g aws-cdk` or `npx aws-cdk` (npx is recommended)
 - **Node.js** - Version 18+ recommended
+- **npm** - For installing dependencies
 
 ### Environment Variables
 
@@ -96,10 +95,11 @@ make bootstrap-cloud-resources
 ```
 
 This will:
-1. Create the RDS service-linked role (required for RDS instances)
-2. Bootstrap CDK in your AWS account (creates the CDK toolkit stack)
+1. Install CDK dependencies in the `infra/` directory (if needed)
+2. Create the RDS service-linked role (required for RDS instances)
+3. Bootstrap CDK in your AWS account (creates the CDK toolkit stack)
 
-**Note:** This only needs to be done once per AWS account/region. If you've already bootstrapped CDK in this account/region, you can skip this step.
+**Note:** Bootstrap only needs to be done once per AWS account/region. If you've already bootstrapped CDK in this account/region, you can skip this step.
 
 **IAM Permissions:** The CDK deployment requires permissions to create:
 - VPC, subnets, security groups
@@ -216,9 +216,16 @@ ETag: W/"d40-D4WfG258q6dHqLEZLkVhzeDGXYQ"
       "chunkIndex": 0,
       "clientId": "doc-1",
       "status": "INGESTED",
-      "failureReason": null,
       "createdAt": "2025-10-28T12:44:13.204Z",
       "updatedAt": "2025-10-28T12:44:13.240Z"
+    },
+    {
+      "chunkId": "c_41b71cd4-f0f8-5796-cd5d-f7c43a16a0cc",
+      "chunkIndex": 1,
+      "clientId": "doc-2",
+      "status": "INGESTED",
+      "createdAt": "2025-10-28T12:44:13.204Z",
+      "updatedAt": "2025-10-28T12:44:14.180Z"
     }
   ]
 }
@@ -464,18 +471,16 @@ node scripts/ingest_jsonl.js \
 
 ### Local Development Philosophy
 
-This project demonstrates a local development approach that prioritizes working with **real cloud infrastructure** rather than local mocks (like LocalStack[²](#footnotes)). Here's the reasoning:
+This project uses a local development approach that prioritizes working with **real cloud infrastructure** rather than local mocks[³](#footnote-3). Here's the reasoning:
 
-- **CDK makes deploying to real environments trivial** - With infrastructure as code, spinning up a real AWS environment is quick and reliable
-- **Testing against real infrastructure is fast** - Modern AWS services (RDS, SQS, Lambda) have low latency, and the feedback loop is actually quite good
-- **Fewer surprises in production** - What you develop against is what runs in production
+- **CDK makes deploying to real environments trivial** - With infrastructure as code, spinning up a real AWS environment is quick and reliable. Initial creation of everything takes around 15 minutes, but updates (like deploying new ECS tasks or Lambda functions) happen very quickly—just a couple minutes.
+- **Testing against real infrastructure is fast** - Modern AWS services (RDS, SQS, Lambda) have low latency, and the feedback loop is actually quite good.
+- **Fewer surprises in production** - What you develop against is what runs in production.
 
 **The Tradeoff:**
-- For local development, you tunnel into the **real database**[³](#footnotes) via SSM Session Manager (see below)
-- The local API can make requests, but the Lambda must be tested separately[⁴](#footnotes) by providing an SQS message payload
-- This means you can't do a full end-to-end test when running locally - it's a conscious tradeoff for simplicity
-
-If you prefer local-first development with mocks, this might not be the approach for you. But for learning cloud-native patterns, I've found this to be the most effective.
+- For local development, you tunnel into the **real database** via SSM Session Manager (see below). The local API connects to the actual RDS instance through this tunnel.
+- The local API can send messages to SQS, but the Lambda consumer must be tested separately by providing an SQS message payload directly (see Lambda Development section).
+- This means you can't run a full end-to-end test entirely on your local machine—it's a conscious tradeoff for simplicity. The approach is to test each piece independently during local development, and run end-to-end tests where everything is deployed in real AWS.
 
 ### Local Development
 
@@ -522,7 +527,7 @@ make integration-tests
 
 ### Database Migrations
 
-Create a new Prisma migration:
+Create a new Prisma migration (if you make a database schema change, generate a new migration like this):
 
 ```bash
 make prisma-migrate migration_name
@@ -572,18 +577,16 @@ _Empirical Methods in Natural Language Processing (EMNLP)_, 2019
 
 ---
 
-## 📝 Footnotes
+## 📝 Footnotes and Hot Takes
 
-<a name="footnotes"></a>
+<a name="footnote-1"></a>
 
-¹ **"Production-like" is a stretch.** I'm using the term with a wink and a nod. This project has production-like patterns (idempotency, async processing, proper error handling), but intentionally omits many production-grade features. See the "Why It Was Built" section for the full list of what's missing.
+¹ **"Production-like," not "production ready"** Many production-grade features are intentionally omitted (HTTPS, authentication, rate limiting, comprehensive test coverage, ECS task autoscaling, OpenAPI specs, bulletproof logging and monitoring, etc.)—I've done those at work. I've asked AI tools to show me how this stuff basically looks in the tech stack I'm using, and I'm content to leave it there for now.
 
-² **LocalStack? No thanks.** I know tools like LocalStack exist, but I prefer working with real AWS infrastructure. CDK makes deploying to real environments trivial, and testing against actual cloud services gives you confidence that what you develop is what runs in production. The tradeoff (can't do full e2e tests locally) is worth it for the learning experience.
+<a name="footnote-2"></a>
 
-³ **Why tunnel to the real database?** Because infrastructure-as-code makes it easy, and real databases behave differently than mocks. Connection pooling, SSL, network latency, and actual query performance all matter. If you're learning cloud-native development, you should experience the real thing.
+² **Yes, ECS, not EKS.** I'm no infrastructure expert, but I've seen and heard about migrations to EKS taking an eternity. I've heard tons of people complain about how hard it is just to get one service to talk to another service. Where possible, my philosophy is to embrace off-the-shelf AWS native tools. ECS seems far simpler and totally AWS native, and makes it quite easy to orchestrate containers and get services talking to each other—seems to give about 80% of the value of Kubernetes with 20% of the pain for simple backend services. Of course, I believe EKS can be great with support from a killer platform team.
 
-⁴ **Lambda testing separately from API?** Yes, this is a conscious tradeoff. The local API sends messages to real SQS, but testing the Lambda consumer requires manually providing an SQS message payload. This is a reasonable compromise for the simplicity it provides - you can still test the Lambda logic thoroughly without full end-to-end integration.
+<a name="footnote-3"></a>
 
-⁵ **Production features intentionally omitted.** I've built authentication, rate limiting, comprehensive monitoring, and all the other production-grade features at work. This project is about learning specific technologies, not re-implementing everything I already know how to do. Focus is key.
-
-⁶ **AI tools for learning? Absolutely.** When I started this project, AI coding assistants were just becoming mainstream. Using them to understand new technologies was transformative - not just for writing code, but for understanding *how* things work and *why* certain patterns exist. It's like having a patient senior engineer pair-programming with you 24/7.
+³ **Why not LocalStack?** Tools like LocalStack exist and are beloved by their supporters, but in my experience, mocked AWS services don't behave like the real thing, and resource setup can be disappointingly cumbersome and error-prone. Considering how easy it is to deploy AWS infrastructure with CDK, testing with real cloud resources is snappy and responsive enough, and gives you confidence that what you're building will behave the same way in production.
