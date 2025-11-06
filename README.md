@@ -6,18 +6,20 @@
 
 ## 📋 Table of Contents
 
-- [What This Is](#-what-this-is)
-- [Why It Was Built](#-why-it-was-built)
-- [Deployment](#-deployment)
-- [API Examples](#-api-examples)
-- [Architecture](#-architecture)
-- [Key Design Decisions](#-key-design-decisions)
-- [Amazon Reviews Data Pipeline](#-amazon-reviews-data-pipeline)
-- [Development](#-development)
-- [Citations](#-citations)
+- [What This Is](#what-this-is)
+- [Why It Was Built](#why-it-was-built)
+- [Deployment](#deployment)
+- [API Examples](#api-examples)
+- [Architecture](#architecture)
+- [Key Design Decisions](#key-design-decisions)
+- [Amazon Reviews Ingestion](#amazon-reviews-ingestion)
+- [Development](#development)
+- [Citations](#citations)
+- [Footnotes & Hot Takes](#footnotes)
 
 ---
 
+<a id="what-this-is"></a>
 ## 🎯 What This Is
 
 This is a fully functional RAG (Retrieval-Augmented Generation) system that:
@@ -39,6 +41,7 @@ The system is designed to handle batch ingestion of documents (like Amazon produ
 
 ---
 
+<a id="why-it-was-built"></a>
 ## 🎓 Why It Was Built
 
 This project was built as a learning exercise to gain hands-on experience with:
@@ -57,6 +60,7 @@ Before working on this, I had no experience with any of the above. I was quite c
 
 ---
 
+<a id="deployment"></a>
 ## 🚀 Deployment
 
 ### Prerequisites
@@ -138,6 +142,7 @@ This destroys the CDK stack (including RDS instance - **data will be lost**).
 
 ---
 
+<a id="api-examples"></a>
 ## 📡 API Examples
 
 ### Ingest Documents
@@ -270,6 +275,7 @@ curl -X POST http://your-api-endpoint/v1/query \
 
 ---
 
+<a id="architecture"></a>
 ## 🏗️ Architecture
 
 ```
@@ -341,6 +347,7 @@ curl -X POST http://your-api-endpoint/v1/query \
 
 ---
 
+<a id="key-design-decisions"></a>
 ## 🔑 Key Design Decisions
 
 ### Idempotency Strategy
@@ -386,6 +393,7 @@ When ingesting Amazon review data, if the same review appears in multiple batche
 
 ---
 
+<a id="amazon-reviews-ingestion"></a>
 ## 📦 Amazon Reviews Ingestion
 
 This project includes scripts to process and ingest Amazon Review data from the [UCSD Amazon Review Dataset](https://cseweb.ucsd.edu/~jmcauley/datasets/amazon_v2/).
@@ -472,6 +480,7 @@ node scripts/ingest_jsonl.js \
 
 ---
 
+<a id="development"></a>
 ## 💻 Development
 
 ### Local Development Philosophy
@@ -557,6 +566,7 @@ make debug-lambda
 
 ---
 
+<a id="citations"></a>
 ## 📚 Citations
 
 This project uses data from the Amazon Review Dataset (2018) provided by UCSD. If you use this dataset or the scripts provided here, please cite:
@@ -582,6 +592,7 @@ _Empirical Methods in Natural Language Processing (EMNLP)_, 2019
 
 ---
 
+<a id="footnotes"></a>
 ## 📝 Footnotes and Hot Takes
 
 <a name="footnote-1"></a>
