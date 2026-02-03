@@ -39,9 +39,9 @@ prisma-migrate:
 test-migration:
 	@echo "🧪 Testing Prisma migrations (fast feedback)"
 	@echo "📦 Ensuring local Postgres is running..."
-	@docker-compose up -d postgres
+	@docker compose up -d postgres
 	@echo "⏳ Waiting for Postgres to be ready..."
-	@until docker-compose exec postgres pg_isready -U postgres -d embeddings >/dev/null 2>&1; do \
+	@until docker compose exec postgres pg_isready -U postgres -d embeddings >/dev/null 2>&1; do \
 		sleep 1; \
 	done
 	@echo "✅ Postgres ready"
@@ -53,7 +53,7 @@ test-migration:
 
 build-local:
 	@echo "🔨 Building Docker images"
-	docker-compose build api
+	docker compose build api
 
 run-local:
 	@echo "🚀 Running app locally with real database"
@@ -62,13 +62,13 @@ run-local:
 run-debug: build-api
 	@echo "🐛 Running app in debug mode with real database"
 	@echo "🔨 Building Docker image for api-debug service..."
-	@docker-compose build api-debug
+	@docker compose build api-debug
 	@bash scripts/run-local-api.sh --debug
 
 integration-tests:
 	@echo "🧪 Building and running integration tests against local service"
-	docker-compose build integration-tests
-	docker-compose run --rm integration-tests
+	docker compose build integration-tests
+	docker compose run --rm integration-tests
 
 stop-tunnel:
 	@echo "🛑 Stopping database tunnel..."
@@ -91,7 +91,7 @@ stop-tunnel:
 
 destroy-local: stop-tunnel
 	@echo "🧹 Stopping and removing local containers"
-	docker-compose down -v --remove-orphans
+	docker compose down -v --remove-orphans
 
 # ========== AWS DEPLOYMENT ==========
 

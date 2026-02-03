@@ -54,8 +54,8 @@ export class HelloService extends Construct {
       taskDefinition: this.taskDefinition,
       desiredCount: 2,
       securityGroups: [securityGroup],
-      assignPublicIp: true, // IMPORTANT (no NAT/endpoints yet)
-      vpcSubnets: { subnetGroupName: 'public' }, // place ENIs in public subnets
+      assignPublicIp: false,
+      vpcSubnets: { subnetGroupName: 'private-egress' },
       cloudMapOptions,
       // Add health check grace period for consistency
       healthCheckGracePeriod: Duration.seconds(30),

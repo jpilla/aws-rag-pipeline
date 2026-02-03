@@ -119,7 +119,7 @@ services:
       context: .
       dockerfile: ./integration-tests/Dockerfile.test
     environment:
-      BASE_URL: "http://InfraS-ApiSe-E7bWskIa3yqH-2144469596.eu-west-1.elb.amazonaws.com" # for example
+      BASE_URL: "http://InfraS-ApiSe-VsTI6xotjDQp-907190039.eu-west-1.elb.amazonaws.com" # for example
     depends_on:
       api:
         condition: service_started

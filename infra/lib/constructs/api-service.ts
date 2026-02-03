@@ -57,8 +57,8 @@ export class ApiService extends Construct {
       memoryLimitMiB: 512,
       publicLoadBalancer: true,
       listenerPort: 80,
-      taskSubnets: { subnetGroupName: 'public' },
-      assignPublicIp: true,
+      taskSubnets: { subnetGroupName: 'private-egress' },
+      assignPublicIp: false,
       securityGroups: [securityGroup],
       healthCheckGracePeriod: Duration.seconds(10),
       circuitBreaker: {
